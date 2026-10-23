@@ -65,11 +65,14 @@ details.conn[open] > summary { margin-bottom: 12px; }
 
 .controls { display: grid; gap: 12px; align-content: start; min-width: 0; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
-.move { display: grid; gap: 4px; }
-.move .eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
-.move .limb { font-family: var(--font-display); font-weight: 700; font-size: clamp(2.2rem, 9vw, 3.1rem); line-height: 1; text-transform: uppercase; letter-spacing: .01em; color: var(--c2); text-wrap: balance; }
+/* The move card keeps one height whatever it says, so «Дальше» never jumps: the command is always
+   one line sized to the card width (not the window), the eyebrow is one line, the hint has two lines reserved. */
+.move { display: grid; gap: 4px; container-type: inline-size; }
+.move .eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; min-width: 0; }
+.move .eyebrow > span { overflow: hidden; text-overflow: ellipsis; }
+.move .limb { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.6rem, 11cqi, 3.1rem); line-height: 1.05; height: 1.05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; letter-spacing: .01em; color: var(--c2); }
 .move .limb.idle { color: var(--c1); }
-.move .hint { color: var(--muted); font-size: .92rem; min-height: 1.4em; }
+.move .hint { color: var(--muted); font-size: .92rem; line-height: 1.4; height: 2.8em; overflow: hidden; }
 .move .hint b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
 .move.stuck .limb { color: var(--danger); }
 
@@ -148,8 +151,8 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   <div class="controls">
     <div class="card move" id="move" aria-live="polite">
       <div class="eyebrow"><span id="moveLabel">Старт</span><span id="stepNo"></span></div>
-      <div class="limb idle" id="limb">Встаньте на старт</div>
-      <div class="hint" id="hint">Четыре зацепки старта: руки сверху, ноги снизу.</div>
+      <div class="limb idle" id="limb">На старт</div>
+      <div class="hint" id="hint">Зацепки цвета 1: руки сверху, ноги снизу.</div>
     </div>
 
     <button class="next" id="next" type="button">Дальше</button>
@@ -889,7 +892,7 @@ if (typeof module !== "undefined") module.exports = Twister;
       if (mode === "ble" && ble.char) bleSend(bytes);
       $("moveLabel").textContent = "Проверка карты"; $("stepNo").textContent = "";
       $("limb").className = "limb idle"; $("limb").textContent = "Сверьте узор";
-      $("hint").textContent = "Углы, нижний ряд и диагональ должны совпасть с превью. «Дальше» — назад к игре.";
+      $("hint").textContent = "Узор на стене должен совпасть с превью. «Дальше» — назад к игре.";
       return;
     }
     currentLabels = new Map();
@@ -928,13 +931,13 @@ if (typeof module !== "undefined") module.exports = Twister;
     if (state.stuck) {
       $("moveLabel").textContent = "Тупик";
       $("limb").className = "limb"; $("limb").textContent = "Некуда ходить";
-      $("hint").textContent = "Нажмите «Отменить ход» или начните новую игру.";
+      $("hint").textContent = "Нажмите «Отменить» или «Новая игра».";
       return;
     }
     if (!state.pending) {
       $("moveLabel").textContent = "Старт";
-      $("limb").className = "limb idle"; $("limb").textContent = "Встаньте на старт";
-      $("hint").textContent = "Четыре зацепки цвета 1: руки сверху, ноги снизу. Затем «Дальше».";
+      $("limb").className = "limb idle"; $("limb").textContent = "На старт";
+      $("hint").textContent = "Зацепки цвета 1: руки сверху, ноги снизу. Затем «Дальше».";
       return;
     }
     const { limb, hold } = state.pending, from = state.pos[limb];
