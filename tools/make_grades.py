@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""data/hold_stats.json (from tools/hold_stats.py) -> data/hand_grades.json used by the game.
+"""Local hold statistics -> data/hand_grades.json used by the game.
+
+Input: hold_stats.json written by tools/hold_stats.py on your own computer (put it at data/hold_stats.json).
+It is not part of the repository: only the small grades file below is published.
 
 For every hand hold (bolt-on on the wall face) the average grade of the real climbs that use it by hand,
 and its percentile among all hand holds: 0 = used in the easiest climbs (comfortable), 1 = the hardest.

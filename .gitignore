@@ -3,3 +3,5 @@ dist/
 *.pyc
 *.db
 tools/db_schema.txt
+data/hold_stats.json
+tools/hold_stats.json

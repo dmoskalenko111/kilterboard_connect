@@ -39,7 +39,7 @@
 | `holds.json` | 476 зацепок: `[placement_id, x, y, led, set_id, кикборд]`, координаты в дюймах |
 | `emulator/` | Эмулятор стены для Linux: ноутбук притворяется стеной, см. `emulator/README.md` |
 | `tools/hold_stats.py` | Статистика зацепок из базы Kilter: как часто каждую берут рукой и ногой (запуск — в начале файла) |
-| `data/` | `hold_stats.json` — статистика 227 704 трасс Kilter по зацепкам; `hand_grades.json` — грейды зацепок для рук (`tools/make_grades.py`) |
+| `data/hand_grades.json` | Грейды зацепок для рук: для каждой — средний грейд реальных трасс, где её берут рукой. Получены `tools/make_grades.py` из локальной статистики `tools/hold_stats.py`; сама статистика в репозиторий не входит |
 | `test/` | Тесты: `node test/test.js`, `python3 test/test_emulator_ble.py` и сверка эмулятора с кодировщиком (`test_emulator.py`) |
 
 После правок в `src/` пересоберите: `python3 build.py`.
@@ -47,8 +47,10 @@
 ## Источники
 
 - Разбор протокола: [Philipp Bazun](https://www.bazun.me/blog/kiterboard/), [fake_kilter_board](https://github.com/1-max-1/fake_kilter_board)
-- Карта зацепок — открытая выгрузка базы Aurora из [hangtime-grip-connect](https://github.com/Stevie-Ray/hangtime-grip-connect)
+- Карта зацепок — общедоступные данные приложения Aurora, выгруженные сообществом, из [hangtime-grip-connect](https://github.com/Stevie-Ray/hangtime-grip-connect)
   (layout 1, размер 10, наборы Bolt Ons и Screw Ons)
+- Грейды зацепок — сводка по трассам из базы приложения Kilter Board, полученной через [BoardLib](https://github.com/lemeryfertitta/BoardLib)
 
-Неофициальный проект. Программа только зажигает зацепки, как официальное приложение;
-прошивку и настройки контроллера не меняет.
+**Неофициальный проект.** Он не связан с Kilter, Setter Closet и Aurora Climbing и ими не одобрен.
+Данные о стене и трассах принадлежат Aurora Climbing и авторам трасс; Kilter Board — товарный знак его владельцев.
+Программа только зажигает зацепки, как официальное приложение; прошивку и настройки контроллера не меняет.
