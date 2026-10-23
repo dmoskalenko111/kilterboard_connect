@@ -94,8 +94,8 @@ details.conn[open] > summary { margin-bottom: 12px; }
 .fine button { border: 1px solid var(--line); background: transparent; border-radius: 10px; padding: 8px 0; cursor: pointer; font-variant-numeric: tabular-nums; color: var(--fg); }
 .fine button[aria-pressed="true"]:not(:disabled) { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 /* records */
-#recordsCard > summary { gap: 8px; }
-#recordsCard > summary .sumr { margin-left: auto; color: var(--muted); font-weight: 400; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+details.card > summary { gap: 8px; }
+details.card > summary .sumr { margin-left: auto; color: var(--muted); font-weight: 400; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rec-sub { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
 .rec-sub:first-of-type { margin-top: 0; }
 .rec-tbl { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
@@ -123,6 +123,16 @@ details.conn[open] > summary { margin-bottom: 12px; }
 .last .rec { color: var(--c1); }
 .btn.warn { color: var(--danger); border-color: var(--danger); }
 .confirm-q { font-weight: 600; margin: 12px 0 0; }
+#stepNo { flex: none; }
+/* players */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; background: transparent; cursor: pointer; font-size: .9rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.chip small { opacity: .7; margin-left: 4px; font-variant-numeric: tabular-nums; }
+.chip.add { color: var(--muted); border-style: dashed; }
+.pl-input { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 8px; padding: 8px 10px; }
+.pl-err { color: var(--danger); }
+#playerCard .field { margin-bottom: 12px; }
 .check.off { opacity: .45; cursor: default; }
 label.check > span { min-width: 0; font-size: 1rem; color: var(--fg); letter-spacing: normal; line-height: 1.35; }
 
@@ -213,10 +223,13 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       </div>
     </details>
 
+    <details class="card" id="playerCard">
+      <summary><span>Игрок</span><span class="sumr" id="plSum"></span></summary>
+      <div id="plBody"></div>
+    </details>
+
     <details class="card" id="settings">
       <summary>Настройки</summary>
-      <div class="field"><span>Рост игрока (масштаб шагов)</span>
-        <div class="rangeval"><input id="height" type="range" min="140" max="205" step="5" value="175"><output id="heightOut">175 см</output></div></div>
       <div class="field"><span>Угол стены (для оценки грейда)</span>
         <div class="rangeval"><input id="angle" type="range" min="0" max="70" step="5" value="30"><output id="angleOut">30°</output></div></div>
       <div class="field"><span>Сложность</span>
@@ -259,7 +272,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     </details>
 
     <details class="card" id="recordsCard">
-      <summary><span>Рекорды</span><span class="sumr" id="recSum"></span></summary>
+      <summary><span>Рекорды</span></summary>
       <div id="recBody"></div>
     </details>
 
@@ -729,7 +742,7 @@ if (typeof module !== "undefined") module.exports = Grade;
   ];
 
   // ---------- settings ----------
-  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, best: {}, voice: "off", angle: 30, fine: false, fineLevel: 5, records: {}, games: [] };
+  const defaults = { c1: "00FF00", c2: "FF00FF", allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, voice: "off", angle: 30, fine: false, fineLevel: 5, players: null, player: "guest" };
   const LEVEL_TEXT = {
     easy: "Короткие шаги, удобные зацепки под руки, только крупные зацепки, тело не растягивается сильно.",
     medium: "Шаги средней длины; ноги иногда на мелких зацепках для ног.",
@@ -748,9 +761,28 @@ if (typeof module !== "undefined") module.exports = Grade;
   settings.fineLevel = Math.round(settings.fineLevel);
   if (!(settings.fineLevel >= 1 && settings.fineLevel <= 10)) settings.fineLevel = 5;
   if (!["easy", "medium", "hard", "hardcore"].includes(settings.level)) settings.level = "medium";
-  if (!settings.records || typeof settings.records !== "object") settings.records = {};
-  if (!Array.isArray(settings.games)) settings.games = [];
+  // Players: each has its own height, records and last games; «Гость» always exists. The first time this version
+  // opens, the records of the previous version (one shared list) are dropped once so players start clean.
+  const GUEST = "guest";
+  const newPlayer = (id, name, heightCm) => ({ id, name, heightCm, best: {}, records: {}, games: [] });
+  if (!Array.isArray(settings.players)) {
+    settings.players = [newPlayer(GUEST, "Гость", 175)];
+    settings.player = GUEST;
+    delete settings.best; delete settings.records; delete settings.games; delete settings.heightCm;
+  }
+  settings.players = settings.players.filter((pl) => pl && typeof pl.id === "string" && typeof pl.name === "string");
+  for (const pl of settings.players) {
+    if (!(pl.heightCm >= 140 && pl.heightCm <= 205)) pl.heightCm = 175;
+    if (!pl.best || typeof pl.best !== "object") pl.best = {};
+    if (!pl.records || typeof pl.records !== "object") pl.records = {};
+    if (!Array.isArray(pl.games)) pl.games = [];
+  }
+  if (!settings.players.some((pl) => pl.id === GUEST)) settings.players.unshift(newPlayer(GUEST, "Гость", 175));
+  settings.players.find((pl) => pl.id === GUEST).name = "Гость";
+  if (!settings.players.some((pl) => pl.id === settings.player)) settings.player = GUEST;
+  const cur = () => settings.players.find((pl) => pl.id === settings.player);
   const save = () => { try { localStorage.setItem("kilterTwister", JSON.stringify(settings)); } catch (e) {} };
+  save();
 
   function applyColors() {
     const r = document.documentElement.style;
@@ -996,7 +1028,7 @@ if (typeof module !== "undefined") module.exports = Grade;
   // ---------- game ----------
   let mode = "mock";
   const playable = () => (settings.boltOnly ? holds.filter((h) => h.set === 1) : holds);
-  const gameOptions = () => ({ heightCm: settings.heightCm, allowCross: settings.allowCross, level: levelKey(),
+  const gameOptions = () => ({ heightCm: cur().heightCm, allowCross: settings.allowCross, level: levelKey(),
     climb: settings.climb, allowMatch: settings.allowMatch, allowSmallMatch: settings.allowSmallMatch });
   // Score: moves completed before falling; best result per level is kept on this phone.
   let fallen = null;   // {completed, best, record} after «Сорвался»
@@ -1004,7 +1036,7 @@ if (typeof module !== "undefined") module.exports = Grade;
     const a = n % 10, b = n % 100;
     return n + " " + (a === 1 && b !== 11 ? "ход" : a >= 2 && a <= 4 && (b < 12 || b > 14) ? "хода" : "ходов");
   };
-  const bestFor = (level) => (settings.best && settings.best[level]) || 0;
+  const bestFor = (level) => cur().best[level] || 0;
   let game = Twister.create(playable(), gameOptions());
   let state = game.start();
   let prevPos = null;
@@ -1132,7 +1164,7 @@ if (typeof module !== "undefined") module.exports = Grade;
   // ---------- grade estimate of the recent "route" (src/grade.js) ----------
   let route = [], routeGrades = [];
   const handAvg = (h) => (GRADES[h.id] ? GRADES[h.id][1] : null);
-  const estimateAt = (moves) => Grade.estimate(moves, settings.heightCm / 2.54, settings.angle, handAvg);
+  const estimateAt = (moves) => Grade.estimate(moves, cur().heightCm / 2.54, settings.angle, handAvg);
   function routePush() {
     if (!state.pending) return;
     route.push({ pos: { ...state.pos, [state.pending.limb]: state.pending.hold }, limb: state.pending.limb,
@@ -1161,9 +1193,9 @@ if (typeof module !== "undefined") module.exports = Grade;
     $("next").textContent = fallen ? "Заново" : "Дальше";
     const best = bestFor(levelKey());
     $("stepNo").textContent = (state.step ? `ход ${state.step} · ` : "") + (best ? `рекорд ${best} · ` : "") + levelName(levelKey());
+    $("moveLabel").textContent = cur().name;
     if (fallen) {
-      $("moveLabel").textContent = "Результат";
-      $("stepNo").textContent = levelName(fallen.key);
+      $("stepNo").textContent = "результат · " + levelName(fallen.key);
       $("limb").className = "limb idle"; $("limb").textContent = movesWord(fallen.completed);
       $("hint").innerHTML = fallen.record
         ? (fallen.best ? `<b>Новый рекорд!</b> Прежний: ${movesWord(fallen.best)}.` : "<b>Первый результат на этом уровне.</b>")
@@ -1171,13 +1203,12 @@ if (typeof module !== "undefined") module.exports = Grade;
       return;
     }
     if (state.stuck) {
-      $("moveLabel").textContent = "Тупик";
+      $("stepNo").textContent = "тупик";
       $("limb").className = "limb"; $("limb").textContent = "Некуда ходить";
       $("hint").textContent = "Нажмите «Отменить» или «Новая игра».";
       return;
     }
     if (!state.pending) {
-      $("moveLabel").textContent = "Старт";
       $("limb").className = "limb idle"; $("limb").textContent = "На старт";
       $("hint").textContent = "Зацепки цвета 1: руки сверху, ноги снизу. Затем «Дальше».";
       return;
@@ -1186,7 +1217,6 @@ if (typeof module !== "undefined") module.exports = Grade;
     const dx = hold.x - from.x, dy = hold.y - from.y;
     const dir = ARROWS[dirIndex(dx, dy)];
     const cm = Math.round(Math.hypot(dx, dy) * 2.54);
-    $("moveLabel").textContent = "Переставьте";
     $("limb").className = "limb"; $("limb").textContent = Twister.NAMES[limb];
     const partner = Twister.LIMBS.find((l) => l !== limb && state.pos[l].id === hold.id);
     $("hint").innerHTML = `${dir} на <b>${cm} см</b> · ` + (partner
@@ -1213,11 +1243,11 @@ if (typeof module !== "undefined") module.exports = Grade;
     const grades = routeGrades.filter((v) => v != null), grade = grades.length ? +Math.max(...grades).toFixed(1) : null;
     const date = Date.now();
     if (record) {
-      settings.best = { ...(settings.best || {}), [key]: completed };
+      cur().best[key] = completed;
       const tags = [settings.climb && "climb", settings.allowMatch && "match", settings.allowCross && "cross"].filter(Boolean);
-      settings.records = { ...(settings.records || {}), [key]: { n: completed, date, grade, angle: settings.angle, height: settings.heightCm, tags } };
+      cur().records[key] = { n: completed, date, grade, angle: settings.angle, height: cur().heightCm, tags };
     }
-    settings.games = [{ date, key, n: completed, grade, record }, ...(settings.games || [])].slice(0, 5);
+    cur().games = [{ date, key, n: completed, grade, record }, ...cur().games].slice(0, 5);
     save();
     fallen = { completed, best, record, key };
     log(`Сорвался: ${movesWord(completed)} на уровне «${levelName(key)}»` + (record ? ", новый рекорд" : ""));
@@ -1241,20 +1271,18 @@ if (typeof module !== "undefined") module.exports = Grade;
   let recPick = null, recConfirm = false;
   // details of one record: grade · angle · height · date + tags; records from before this version only have the count
   function recMeta(key, withTags = true) {
-    const r = settings.records[key];
+    const r = cur().records[key];
     if (!r || r.n !== bestFor(key)) return "—";
     const parts = [r.grade != null ? `<b>${Grade.label(r.grade).text}</b>` : "грейд —", r.angle + "°", r.height + " см", ddmm(r.date)];
     return parts.join(" · ") + (withTags ? (r.tags || []).map((t) => `<span class="tag">${TAG_NAME[t] || esc(t)}</span>`).join("") : "");
   }
   function renderRecords() {
-    const best = settings.best || {};
+    const best = cur().best;
     const keys = Object.keys(best).filter((k) => best[k] > 0);
-    const top = keys.reduce((a, k) => (a && best[a] >= best[k] ? a : k), null);
-    $("recSum").textContent = top ? `лучший: ${movesWord(best[top])} · ${levelName(top)}` : "пока нет";
     if (recConfirm) {
-      $("recBody").innerHTML = `<p class="confirm-q">Удалить все рекорды и историю игр?</p>
+      $("recBody").innerHTML = `<p class="confirm-q">Удалить все рекорды и историю игр игрока «${esc(cur().name)}»?</p>
         <div class="row" style="margin-top:10px"><button class="btn warn" type="button" id="recYes">Удалить</button><button class="btn" type="button" id="recNo">Отмена</button></div>`;
-      $("recYes").onclick = () => { settings.best = {}; settings.records = {}; settings.games = []; save(); recConfirm = false; recPick = null; renderRecords(); renderMove(); };
+      $("recYes").onclick = () => { Object.assign(cur(), { best: {}, records: {}, games: [] }); save(); recConfirm = false; recPick = null; renderRecords(); renderMove(); };
       $("recNo").onclick = () => { recConfirm = false; renderRecords(); };
       return;
     }
@@ -1269,19 +1297,87 @@ if (typeof module !== "undefined") module.exports = Grade;
     }).join("");
     const pick = recPick ? (best[recPick] ? `Уровень ${recPick.slice(1)}: <b>${movesWord(best[recPick])}</b> · ${recMeta(recPick)}` : `Уровень ${recPick.slice(1)}: ещё не играли`)
       : "Нажмите на уровень, чтобы увидеть подробности.";
-    const games = (settings.games || []).map((g) => `<div><span>${ddmm(g.date)} · ${levelName(g.key)}</span>` +
+    const games = cur().games.map((g) => `<div><span>${ddmm(g.date)} · ${levelName(g.key)}</span>` +
       (g.record ? `<span class="rec"><b>${movesWord(g.n)}</b> · рекорд</span>` : `<span><b>${movesWord(g.n)}</b>${g.grade != null ? " · " + Grade.label(g.grade).text : ""}</span>`) + "</div>").join("")
       || '<div><span>Пока нет сыгранных игр.</span></div>';
-    $("recBody").innerHTML = `<div class="rec-sub">Уровни</div><table class="rec-tbl">${rows}</table>
+    $("recBody").innerHTML = `<div class="rec-sub">Игрок: ${esc(cur().name)}</div><div class="rec-sub">Уровни</div><table class="rec-tbl">${rows}</table>
       <div class="rec-sub">Подробная шкала</div><div class="grid10">${cells}</div><p class="rec-detail" id="recDetail">${pick}</p>
       <div class="rec-sub">Последние игры</div><div class="last">${games}</div>
-      <div class="row" style="margin-top:12px"><button class="btn warn" type="button" id="recReset"${keys.length || settings.games.length ? "" : " disabled"}>Сбросить рекорды</button></div>
-      <p class="note" style="margin-top:10px">Рекорды хранятся только в этом телефоне. В строке рекорда — самый трудный отрезок той игры, угол стены, рост и дата;
-        метки показывают включённые «Подъём», «Перехват» и «Скрещивание». У рекордов из прежней версии подробностей нет.</p>`;
+      <div class="row" style="margin-top:12px"><button class="btn warn" type="button" id="recReset"${keys.length || cur().games.length ? "" : " disabled"}>Сбросить рекорды</button></div>
+      <p class="note" style="margin-top:10px">Рекорды хранятся только в этом телефоне, у каждого игрока свои. В строке рекорда — самый трудный отрезок той игры, угол стены, рост и дата;
+        метки показывают включённые «Подъём», «Перехват» и «Скрещивание».</p>`;
     for (const b of $("recBody").querySelectorAll(".grid10 button")) b.onclick = () => { recPick = recPick === b.dataset.k ? null : b.dataset.k; renderRecords(); };
     $("recReset").onclick = () => { recConfirm = true; renderRecords(); };
   }
   renderRecords();
+
+  // ---------- players ----------
+  let plMode = null;     // null | "add" | "rename" | "delete"
+  const MAX_PLAYERS = 12;
+  const heightField = (id, v) => `<div class="field"><span>Рост (масштаб шагов)</span>
+    <div class="rangeval"><input id="${id}" type="range" min="140" max="205" step="5" value="${v}"><output id="${id}Out">${v} см</output></div></div>`;
+  function nameError(name, self) {
+    if (!name) return "Введите имя.";
+    if (name.length > 20) return "Не длиннее 20 символов.";
+    const low = name.toLocaleLowerCase("ru");
+    if (settings.players.some((pl) => pl !== self && pl.name.toLocaleLowerCase("ru") === low)) return "Такое имя уже есть.";
+    return "";
+  }
+  function switchedPlayer() {
+    save(); recPick = null; recConfirm = false;
+    restart(true); next(true); renderRecords(); renderPlayers();
+  }
+  function renderPlayers() {
+    const p = cur(), body = $("plBody");
+    $("plSum").textContent = `${p.name} · ${p.heightCm} см`;
+    if (plMode === "add" || plMode === "rename") {
+      const adding = plMode === "add";
+      body.innerHTML = `<div class="field"><span>${adding ? "Новый игрок — имя" : "Новое имя"}</span>
+        <input class="pl-input" id="plName" maxlength="20" autocomplete="off" value="${adding ? "" : esc(p.name)}">
+        <p class="note" id="plErr">до 20 символов, имена не повторяются</p></div>` +
+        (adding ? heightField("plNewH", 175) : "") +
+        `<div class="row"><button class="btn" type="button" id="plSave" style="border-color:var(--fg)">Сохранить</button><button class="btn" type="button" id="plCancel">Отмена</button></div>`;
+      if (adding) $("plNewH").oninput = (e) => { $("plNewHOut").textContent = e.target.value + " см"; };
+      const submit = () => {
+        const name = $("plName").value.trim().replace(/\s+/g, " ");
+        const err = nameError(name, adding ? null : p);
+        if (err) { $("plErr").textContent = err; $("plErr").className = "note pl-err"; return; }
+        if (adding) {
+          const pl = newPlayer("p" + Date.now().toString(36), name, +$("plNewH").value);
+          settings.players.push(pl); settings.player = pl.id; plMode = null; switchedPlayer();
+        } else { p.name = name; plMode = null; save(); renderPlayers(); renderRecords(); renderMove(); }
+      };
+      $("plSave").onclick = submit;
+      $("plName").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } };
+      $("plCancel").onclick = () => { plMode = null; renderPlayers(); };
+      $("plName").focus();
+      return;
+    }
+    if (plMode === "delete") {
+      body.innerHTML = `<p class="confirm-q" style="margin-top:0">Удалить игрока «${esc(p.name)}» и его рекорды?</p>
+        <div class="row" style="margin-top:10px"><button class="btn warn" type="button" id="plYes">Удалить</button><button class="btn" type="button" id="plNo">Отмена</button></div>`;
+      $("plYes").onclick = () => { settings.players = settings.players.filter((pl) => pl !== p); settings.player = GUEST; plMode = null; switchedPlayer(); };
+      $("plNo").onclick = () => { plMode = null; renderPlayers(); };
+      return;
+    }
+    const chips = settings.players.map((pl) =>
+      `<button class="chip" type="button" data-id="${esc(pl.id)}" aria-pressed="${pl.id === p.id}">${esc(pl.name)}<small id="${pl.id === p.id ? "plChipH" : ""}">${pl.heightCm}</small></button>`).join("") +
+      (settings.players.length < MAX_PLAYERS ? `<button class="chip add" type="button" id="plAdd">＋ Добавить</button>` : "");
+    const guest = p.id === GUEST;
+    body.innerHTML = `<div class="field"><span>Кто играет</span><div class="chips">${chips}</div></div>` + heightField("height", p.heightCm) +
+      (guest ? "" : `<div class="row" style="margin-bottom:12px"><button class="btn" type="button" id="plRename">Переименовать</button><button class="btn warn" type="button" id="plDel">Удалить игрока</button></div>`) +
+      `<p class="note">${guest ? "Гость есть всегда, удалить или переименовать его нельзя. " : ""}Рост, рекорды и последние игры — у каждого игрока свои, остальные настройки общие. Имена хранятся только в этом телефоне. Рост действует со следующего хода.</p>`;
+    for (const b of body.querySelectorAll(".chip[data-id]")) b.onclick = () => { if (b.dataset.id !== settings.player) { settings.player = b.dataset.id; switchedPlayer(); } };
+    if ($("plAdd")) $("plAdd").onclick = () => { plMode = "add"; renderPlayers(); };
+    if ($("plRename")) $("plRename").onclick = () => { plMode = "rename"; renderPlayers(); };
+    if ($("plDel")) $("plDel").onclick = () => { plMode = "delete"; renderPlayers(); };
+    $("height").oninput = (e) => {
+      p.heightCm = +e.target.value; save();
+      $("heightOut").textContent = p.heightCm + " см"; $("plChipH").textContent = p.heightCm; $("plSum").textContent = `${p.name} · ${p.heightCm} см`;
+      game.setOptions({ heightCm: p.heightCm }); routeRecompute(); renderGrade();
+    };
+  }
+  renderPlayers();
 
   // ---------- wiring ----------
   $("next").onclick = () => next();
@@ -1307,10 +1403,8 @@ if (typeof module !== "undefined") module.exports = Grade;
   $("connCard").addEventListener("toggle", () => { settings.connOpen = $("connCard").open; save(); });
   $("modeMock").onclick = () => setMode("mock");
   $("modeBle").onclick = () => setMode("ble");
-  $("height").value = settings.heightCm; $("heightOut").textContent = settings.heightCm + " см";
   $("angle").value = settings.angle; $("angleOut").textContent = settings.angle + "°";
   $("angle").oninput = (e) => { settings.angle = +e.target.value; $("angleOut").textContent = settings.angle + "°"; save(); routeRecompute(); renderGrade(); showFineNote(); };
-  $("height").oninput = (e) => { settings.heightCm = +e.target.value; $("heightOut").textContent = settings.heightCm + " см"; save(); game.setOptions({ heightCm: settings.heightCm }); routeRecompute(); renderGrade(); };
   $("climb").checked = !!settings.climb;
   $("climb").onchange = (e) => { settings.climb = e.target.checked; save(); game.setOptions({ climb: settings.climb }); };
   // «Сдваиваться на мелких» only matters with matching on, so it is greyed out without it.
