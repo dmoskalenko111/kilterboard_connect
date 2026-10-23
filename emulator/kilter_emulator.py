@@ -199,24 +199,25 @@ async def run_ble(name, events, stop, set_alias):
             UART_SERVICE, RX_CHARACTERISTIC,
             GATTCharacteristicProperties.write | GATTCharacteristicProperties.write_without_response,
             None, GATTAttributePermissions.writeable)
+        # bless (BlueZ backend) marks only the first service as primary and registers the rest as
+        # secondary. Web Bluetooth's getPrimaryService() never sees secondary services, so the phone
+        # would find the board but not its UART service. The real board exposes both as primary.
+        for svc in server.app.services:
+            svc._primary = True
         await server.start()
     except Exception as e:  # noqa: BLE001
         events.put(("fatal", f"Не удалось запустить Bluetooth: {e}\n"
                              "Проверьте: включён ли Bluetooth (bluetoothctl power on) и запущена ли служба "
                              "(systemctl status bluetooth)."))
         return
-    events.put(("status", f"Реклама включена: «{name}». Ищите её в приложении → «Стена» → «Подключить»."))
-    was_connected = False
+    services = ", ".join(f"{s.UUID[:8]}…{' (основной)' if s.Primary else ' (вторичный!)'}" for s in server.app.services)
+    events.put(("status", f"Реклама включена: «{name}». Сервисы: {services}. "
+                          "Ищите её в приложении → «Стена» → «Подключить»."))
+    # bless reports a connection only when a client subscribes to notifications, which the Aurora
+    # protocol never does, so connection state is shown from incoming writes instead (see Core).
     try:
         while not stop.is_set():
             await asyncio.sleep(0.5)
-            try:
-                c = await server.is_connected()
-            except Exception:  # noqa: BLE001
-                c = was_connected
-            if c != was_connected:
-                events.put(("conn", c))
-                was_connected = c
     finally:
         try:
             await server.stop()
@@ -290,6 +291,8 @@ def run_terminal(holds, events, stop):
         while True:
             ev = events.get()
             if ev[0] == "write":
+                if core.stats.writes == 0:
+                    print("● телефон шлёт данные", flush=True)
                 core.write(ev[1], ev[2])
             elif ev[0] == "conn":
                 print("● телефон подключился" if ev[1] else "○ телефон отключился", flush=True)
@@ -324,7 +327,7 @@ def run_gui(holds, events, stop, title):
     canvas.pack(fill="both", expand=True)
     status = tk.Label(right, text="Запуск…", bg=BG, fg=FG, font=head, anchor="w", justify="left", wraplength=400)
     status.pack(fill="x")
-    conn = tk.Label(right, text="○ телефон не подключён", bg=BG, fg=MUTED, anchor="w")
+    conn = tk.Label(right, text="○ данных от телефона ещё не было", bg=BG, fg=MUTED, anchor="w")
     conn.pack(fill="x", pady=(4, 0))
     counters = tk.Label(right, text="", bg=BG, fg=MUTED, anchor="w", font=mono)
     counters.pack(fill="x", pady=(4, 8))
@@ -385,6 +388,7 @@ def run_gui(holds, events, stop, title):
                 ev = events.get_nowait()
                 if ev[0] == "write":
                     core.write(ev[1], ev[2])
+                    conn.config(text="● телефон шлёт данные", fg=OK)
                 elif ev[0] == "conn":
                     conn.config(text="● телефон подключён" if ev[1] else "○ телефон отключился", fg=OK if ev[1] else MUTED)
                     core.dec.reset()
@@ -394,6 +398,9 @@ def run_gui(holds, events, stop, title):
                     status.config(text=ev[1], fg=FG)
         except queue.Empty:
             pass
+        lw = core.stats.last_write
+        if lw is not None and time.monotonic() - lw > 15:
+            conn.config(text=f"○ данных нет {int(time.monotonic() - lw)} с (нормально, пока не нажимают «Дальше»)", fg=MUTED)
         if not stop.is_set():
             root.after(40, pump)
 
