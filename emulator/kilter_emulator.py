@@ -71,7 +71,7 @@ class Decoder:
                 self.buf.clear()
                 return
             if start > 0:
-                self.on_error(f"мусор перед пакетом: {start} байт")
+                self.on_error(f"лишние байты перед пакетом: {start}")
                 del self.buf[:start]
             if len(self.buf) < 4:
                 return
@@ -212,9 +212,10 @@ async def run_ble(name, events, stop, set_alias):
                              "(systemctl status bluetooth)."))
         return
     baseline = await connected_devices(server)
-    services = ", ".join(f"{s.UUID[:8]}…{' (основной)' if s.Primary else ' (вторичный!)'}" for s in server.app.services)
-    events.put(("status", f"Реклама включена: «{name}». Сервисы: {services}. "
-                          "Ищите её в приложении → «Стена» → «Подключить»."))
+    services = ", ".join(f"{s.UUID[:8]} {'основной' if s.Primary else 'ВТОРИЧНЫЙ — телефон его не увидит'}" for s in server.app.services)
+    events.put(("status", f"Эмулятор виден телефонам как «{name}»\n"
+                          f"Сервисы: {services}\n"
+                          "В приложении: «Стена» → «Подключить стену» → выберите это имя"))
     # bless reports a connection only when a client subscribes to notifications, which the Aurora
     # protocol never does, so connection state is shown from incoming writes instead (see Core).
     try:
@@ -357,34 +358,94 @@ def run_terminal(holds, events, stop, expected_api=None):
         stop.set()
 
 
-def run_gui(holds, events, stop, title, expected_api=None):
+def run_gui(holds, events, stop, title, expected_api=None, mode_text=""):
     import tkinter as tk
     from tkinter import font as tkfont
 
-    BG, PLY, KB, BOLT, FG, MUTED, BAD, OK = "#11151b", "#2a2520", "#211d19", "#4b443b", "#e9edf2", "#8d98a7", "#ff7a6b", "#36d37a"
+    BG, PANEL, PLY, KB, BOLT, FG, MUTED, BAD, OK = ("#11151b", "#191f27", "#2a2520", "#211d19", "#4b443b",
+                                                    "#e9edf2", "#8d98a7", "#ff7a6b", "#36d37a")
     root = tk.Tk()
     root.title(title)
     root.configure(bg=BG)
-    root.geometry("1040x760")
-    mono = tkfont.Font(family="DejaVu Sans Mono", size=9)
-    head = tkfont.Font(family="DejaVu Sans", size=12, weight="bold")
+    # Size to the screen instead of a fixed geometry: small or HiDPI-scaled screens got a cut-off window.
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    root.geometry(f"{min(1100, int(sw * 0.85))}x{min(780, int(sh * 0.85))}")
+    root.minsize(480, 420)
 
-    left = tk.Frame(root, bg=BG); left.pack(side="left", fill="both", expand=True, padx=12, pady=12)
-    right = tk.Frame(root, bg=BG, width=420); right.pack(side="right", fill="y", padx=(0, 12), pady=12)
-    right.pack_propagate(False)
+    # Named fonts so Ctrl+plus / Ctrl+minus can resize all text at once.
+    base = {"head": 12, "text": 10, "mono": 9}
+    fonts = {
+        "head": tkfont.Font(family="DejaVu Sans", size=base["head"], weight="bold"),
+        "text": tkfont.Font(family="DejaVu Sans", size=base["text"]),
+        "mono": tkfont.Font(family="DejaVu Sans Mono", size=base["mono"]),
+    }
+    zoom = {"d": 0}
 
-    canvas = tk.Canvas(left, bg=BG, highlightthickness=0)
-    canvas.pack(fill="both", expand=True)
-    status = tk.Label(right, text="Запуск…", bg=BG, fg=FG, font=head, anchor="w", justify="left", wraplength=400)
-    status.pack(fill="x")
-    conn = tk.Label(right, text="○ данных от телефона ещё не было", bg=BG, fg=MUTED, anchor="w")
-    conn.pack(fill="x", pady=(4, 0))
-    counters = tk.Label(right, text="", bg=BG, fg=MUTED, anchor="w", font=mono)
-    counters.pack(fill="x", pady=(4, 8))
-    logbox = tk.Text(right, bg="#191f27", fg=MUTED, font=mono, relief="flat", wrap="char", height=30)
-    logbox.pack(fill="both", expand=True)
+    def set_zoom(d):
+        zoom["d"] = max(-3, min(8, d))
+        for k, f in fonts.items():
+            f.configure(size=base[k] + zoom["d"])
+        relayout()
+
+    wall = tk.Frame(root, bg=BG)
+    panel = tk.Frame(root, bg=BG)
+    # Caption is packed first at the bottom so a short window shrinks the drawing, not the caption.
+    caption = tk.Label(wall, text="", bg=BG, fg=MUTED, font=fonts["mono"], justify="center")
+    caption.pack(side="bottom", fill="x", pady=(4, 0))
+    canvas = tk.Canvas(wall, bg=BG, highlightthickness=0, width=200, height=200)
+    canvas.pack(side="top", fill="both", expand=True)
+
+    status = tk.Label(panel, text="Запуск…", bg=BG, fg=FG, font=fonts["head"], anchor="w", justify="left")
+    detail = tk.Label(panel, text="", bg=BG, fg=MUTED, font=fonts["text"], anchor="w", justify="left")
+    mode = tk.Label(panel, text=mode_text, bg=BG, fg=MUTED, font=fonts["text"], anchor="w", justify="left")
+    conn = tk.Label(panel, text="○ данных от телефона ещё не было", bg=BG, fg=MUTED, font=fonts["text"], anchor="w", justify="left")
+    counters = tk.Label(panel, text="", bg=BG, fg=MUTED, font=fonts["mono"], anchor="w", justify="left")
+    hint = tk.Label(panel, text="Ctrl + / Ctrl − — размер текста", bg=BG, fg=MUTED, font=fonts["mono"], anchor="w")
+    logframe = tk.Frame(panel, bg=PANEL)
+    logbox = tk.Text(logframe, bg=PANEL, fg=MUTED, font=fonts["mono"], relief="flat", wrap="char",
+                     width=20, height=8, highlightthickness=0, padx=6, pady=4)
+    scroll = tk.Scrollbar(logframe, command=logbox.yview)
+    logbox.configure(yscrollcommand=scroll.set)
+    scroll.pack(side="right", fill="y")
+    logbox.pack(side="left", fill="both", expand=True)
     logbox.tag_configure("err", foreground=BAD)
     logbox.tag_configure("ok", foreground=FG)
+    for i, wdg in enumerate((status, detail, mode, conn, counters)):
+        wdg.grid(row=i, column=0, sticky="ew", pady=(0, 4))
+    logframe.grid(row=5, column=0, sticky="nsew", pady=(6, 4))
+    hint.grid(row=6, column=0, sticky="ew")
+    panel.columnconfigure(0, weight=1)
+    panel.rowconfigure(5, weight=1)          # the log takes all remaining height
+    detail.grid_remove()
+
+    # Wide window: wall left, panel right. Narrow window: panel below the wall.
+    layout = {"wide": None}
+
+    def relayout(event=None):
+        w = root.winfo_width()
+        wide = w >= 820
+        if wide != layout["wide"]:
+            layout["wide"] = wide
+            wall.grid_forget(); panel.grid_forget()
+            for i in range(2):
+                root.columnconfigure(i, weight=0, minsize=0); root.rowconfigure(i, weight=0, minsize=0)
+            if wide:
+                wall.grid(row=0, column=0, sticky="nsew", padx=(12, 8), pady=12)
+                panel.grid(row=0, column=1, sticky="nsew", padx=(8, 12), pady=12)
+                root.columnconfigure(0, weight=3); root.columnconfigure(1, weight=2, minsize=300)
+                root.rowconfigure(0, weight=1)
+            else:
+                wall.grid(row=0, column=0, sticky="nsew", padx=12, pady=(12, 4))
+                panel.grid(row=1, column=0, sticky="nsew", padx=12, pady=(4, 12))
+                root.columnconfigure(0, weight=1)
+                root.rowconfigure(0, weight=3); root.rowconfigure(1, weight=2, minsize=220)
+        root.after_idle(rewrap)
+
+    def rewrap():
+        pw = max(160, panel.winfo_width() - 4)
+        for wdg in (status, detail, mode, conn, counters):
+            wdg.configure(wraplength=pw)
+        caption.configure(wraplength=max(160, wall.winfo_width() - 4))
 
     state = {"lit": [], "api": None}
 
@@ -411,8 +472,8 @@ def run_gui(holds, events, stop, title, expected_api=None):
                                fill=c, outline="")
             canvas.create_text(X(hd["x"]) + 4.6 * s, Y(hd["y"]), text=str(hd["led"]), fill=FG, anchor="w",
                                font=("DejaVu Sans", max(7, int(2.6 * s))))
-        cap = f"горит {len(state['lit'])}" + (f" · API {state['api']}" if state["api"] else "") + " · внизу кикборд · подписи = номер LED"
-        canvas.create_text(w / 2, h - 6, text=cap, fill=MUTED, anchor="s", font=mono)
+        caption.configure(text=f"горит {len(state['lit'])}" + (f" · API {state['api']}" if state["api"] else "")
+                          + " · внизу кикборд · подписи — номера светодиодов")
 
     def log(text, tag=None):
         logbox.insert("1.0", text + "\n", tag or ())
@@ -432,6 +493,12 @@ def run_gui(holds, events, stop, title, expected_api=None):
 
     core = Core(holds, out, expected_api)
 
+    def show_status(text, color):
+        first, _, rest = text.partition("\n")
+        status.config(text=first, fg=color)
+        detail.config(text=rest)
+        (detail.grid if rest else detail.grid_remove)()
+
     def pump():
         try:
             while True:
@@ -443,23 +510,31 @@ def run_gui(holds, events, stop, title, expected_api=None):
                     conn.config(text="● телефон подключён" if ev[1] else "○ телефон отключился", fg=OK if ev[1] else MUTED)
                     core.dec.reset()
                 elif ev[0] == "fatal":
-                    status.config(text=ev[1], fg=BAD)
+                    show_status(ev[1], BAD)
                 else:
-                    status.config(text=ev[1], fg=FG)
+                    show_status(ev[1], FG)
         except queue.Empty:
             pass
         lw = core.stats.last_write
         if lw is not None and time.monotonic() - lw > 15:
-            conn.config(text=f"○ данных нет {int(time.monotonic() - lw)} с (нормально, пока не нажимают «Дальше»)", fg=MUTED)
+            conn.config(text=f"○ данных нет {int(time.monotonic() - lw)} с — это нормально, пока не нажимают «Дальше»", fg=MUTED)
         if not stop.is_set():
             root.after(40, pump)
 
     def close():
         stop.set()
-        root.after(700, root.destroy)  # give the Bluetooth thread time to stop advertising
+        root.after(700, root.destroy)  # give the Bluetooth thread time to stop being visible
 
     canvas.bind("<Configure>", lambda e: draw())
+    root.bind("<Configure>", lambda e: relayout() if e.widget is root else None)
+    for seq in ("<Control-plus>", "<Control-equal>", "<Control-KP_Add>"):
+        root.bind(seq, lambda e: set_zoom(zoom["d"] + 1))
+    for seq in ("<Control-minus>", "<Control-KP_Subtract>"):
+        root.bind(seq, lambda e: set_zoom(zoom["d"] - 1))
+    root.bind("<Control-0>", lambda e: set_zoom(0))
     root.protocol("WM_DELETE_WINDOW", close)
+    root.update_idletasks()
+    relayout()
     root.after(40, pump)
     try:
         root.mainloop()
@@ -492,14 +567,14 @@ def selftest_feeder(holds, events, stop):
 
 def main():
     ap = argparse.ArgumentParser(description="Эмулятор стены Kilter Board (Aurora) для Linux")
-    ap.add_argument("--name", default="Emu@3", help="имя стены в рекламе; @3 или @2 = версия протокола (по умолчанию Emu@3)")
+    ap.add_argument("--name", default="Emu@3", help="имя, под которым эмулятор виден телефонам; @3 или @2 = версия протокола (по умолчанию Emu@3)")
     ap.add_argument("--no-gui", action="store_true", help="без окна, журнал в терминал")
     ap.add_argument("--selftest", action="store_true", help="без Bluetooth: проверить окно и декодер на тестовых пакетах")
     ap.add_argument("--lenient", action="store_true", help="принимать пакеты обеих версий протокола (по умолчанию только версию из имени)")
     ap.add_argument("--set-alias", action="store_true", help="на время работы сменить Bluetooth-имя ноутбука на --name (вернётся при выходе)")
     a = ap.parse_args()
     if len(a.name.encode()) > 8:
-        print(f"Внимание: имя «{a.name}» длиннее 8 байт может не поместиться в рекламный пакет вместе с UUID.")
+        print(f"Внимание: имя «{a.name}» длиннее 8 байт может не поместиться в Bluetooth-сигнал вместе с UUID, и телефон покажет устройство без имени.")
 
     # Like the official app: "@3" at the end of the name means API 3, anything else means API 2.
     m = re.search(r"@(\d+)$", a.name)
@@ -520,7 +595,7 @@ def main():
             run_terminal(holds, events, stop, expected)
         else:
             try:
-                run_gui(holds, events, stop, f"Эмулятор Kilter · {a.name} · {mode}", expected)
+                run_gui(holds, events, stop, f"Эмулятор Kilter · {a.name}", expected, mode_text=mode.capitalize())
             except Exception as e:  # noqa: BLE001  (no display / no tkinter)
                 print(f"Окно не открылось ({e}), продолжаю в терминале.")
                 run_terminal(holds, events, stop, expected)
