@@ -37,7 +37,8 @@ const Twister = (() => {
   const HIGH_FROM = 96;               // above this (~2.4 m), moves start to prefer going down
   // Pull strength: climb mode up/down; near the ceiling without climb mode (strong) and with it (mild,
   // since climb mode turns down at the top by itself).
-  const CLIMB_PULL = 2.5, HIGH_PULL = 4, HIGH_PULL_CLIMB = 1.5, MATCH_RATE = 0.2;
+  const CLIMB_PULL = 2.5, HIGH_PULL = 4, HIGH_PULL_CLIMB = 1.5;
+  const MATCH_SHARE = 0.04;           // matching moves: about 4% of all moves when matching is on
   // Grade percentile of a hand hold: 0 = used in the easiest real climbs, 1 = the hardest; 0.5 if unknown.
   const gradeOf = (h) => (h.handGrade == null ? 0.5 : h.handGrade);
   // Absolute anatomy limits (fractions of H) that no level may exceed; used by the tests.
@@ -47,7 +48,8 @@ const Twister = (() => {
   function create(holds, options = {}, rng = Math.random) {
     // climb: moves lead upwards until the hands reach the top, then back down (off by default)
     // allowMatch: two limbs may share one hold, as climbers match hands or feet (off by default)
-    const opt = { heightCm: 175, allowCross: false, level: "medium", climb: false, allowMatch: false, ...options };
+    // allowSmallMatch: with matching on, two limbs may share even a small foothold (off by default)
+    const opt = { heightCm: 175, allowCross: false, level: "medium", climb: false, allowMatch: false, allowSmallMatch: false, ...options };
     const L = () => LEVELS[opt.level] || LEVELS.medium;
     let pos = null;       // limb -> hold
     let pending = null;   // {limb, hold}
@@ -55,6 +57,7 @@ const Twister = (() => {
     let history = [];
     let step = 0;
     let phase = "up";     // climb mode: "up" until the hands reach the top, then "down"
+    let moveCount = 0, matchCount = 0;   // for keeping matching rare
 
     const H = () => opt.heightCm / 2.54;          // player's height in wall units (inches)
     const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -77,7 +80,7 @@ const Twister = (() => {
         const hold = nearest(plan[l][0], plan[l][1], used, (x) => ok(l, x));
         pos[l] = hold; used.add(hold.id);
       }
-      pending = null; lastLimb = null; history = []; step = 0; phase = "up";
+      pending = null; lastLimb = null; history = []; step = 0; phase = "up"; moveCount = 0; matchCount = 0;
       return snapshot();
     }
 
@@ -107,11 +110,11 @@ const Twister = (() => {
       const own = pos[limb].id;
       const others = new Set(LIMBS.filter((l) => l !== limb).map((l) => pos[l].id));
       return holds.filter((h) => h.id !== own && (!exclude || h.id !== exclude.id)
-        && (opt.allowMatch || !others.has(h.id)) && fits(limb, h, reach));
+        && (!others.has(h.id) || (opt.allowMatch && (handHold(h) || opt.allowSmallMatch))) && fits(limb, h, reach));
     }
 
     function next() {
-      history.push(JSON.stringify({ pos, pending, lastLimb, step, phase }));
+      history.push(JSON.stringify({ pos, pending, lastLimb, step, phase, moveCount, matchCount }));
       if (history.length > 200) history.shift();
       let freed = null;
       if (pending) { freed = pos[pending.limb]; pos = { ...pos, [pending.limb]: pending.hold }; pending = null; }
@@ -128,6 +131,8 @@ const Twister = (() => {
           const c = candidates(limb, reach, freed);
           if (c.length) {
             pending = { limb, hold: choose(limb, c) }; lastLimb = limb; step++;
+            moveCount++;
+            if (LIMBS.some((l) => l !== limb && pos[l].id === pending.hold.id)) matchCount++;
             return { ...snapshot(), freed };
           }
         }
@@ -153,10 +158,15 @@ const Twister = (() => {
         const main = pool.filter((h) => handHold(h));
         pool = alt.length && (rng() < lv.handAltRate || !main.length) ? alt : main;
       }
-      if (opt.allowMatch && rng() < MATCH_RATE) {
+      if (opt.allowMatch) {
+        // Matching happens on purpose and rarely: an occupied hold is offered only when matching is "due",
+        // otherwise only free holds are (if any), so short moves don't land on a neighbour by chance.
         const taken = new Set(LIMBS.filter((l) => l !== limb).map((l) => pos[l].id));
-        const match = pool.filter((h) => taken.has(h.id));
-        if (match.length) pool = match;
+        const match = pool.filter((h) => taken.has(h.id)), free = pool.filter((h) => !taken.has(h.id));
+        // Keep matching near MATCH_SHARE of all moves on every level: offer it only while the game is
+        // below that share, so it stays an occasional variation, not every few moves.
+        const due = matchCount < MATCH_SHARE * moveCount && rng() < 0.5;
+        pool = match.length && (due || !free.length) ? match : free;
       }
       // Direction: climb mode leads up, then down; near the ceiling, moves tend downwards anyway, so the
       // player does not stay long under the top in a twisted position.
@@ -179,6 +189,7 @@ const Twister = (() => {
       if (!history.length) return snapshot();
       const s = JSON.parse(history.pop());
       pos = s.pos; pending = s.pending; lastLimb = s.lastLimb; step = s.step; phase = s.phase || "up";
+      moveCount = s.moveCount || 0; matchCount = s.matchCount || 0;
       return snapshot();
     }
 

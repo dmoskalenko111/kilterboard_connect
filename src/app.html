@@ -81,6 +81,7 @@ details.conn[open] > summary { margin-bottom: 12px; }
 .btn:disabled { opacity: .4; cursor: default; }
 .btn.fell:not(:disabled) { border-color: var(--danger); color: var(--danger); }
 .checks { display: grid; gap: 12px; }
+.check.off { opacity: .45; cursor: default; }
 label.check > span { min-width: 0; font-size: 1rem; color: var(--fg); letter-spacing: normal; line-height: 1.35; }
 
 .conn .status { display: flex; align-items: center; gap: 8px; font-size: .9rem; min-width: 0; }
@@ -181,6 +182,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
         <label class="check"><input id="match" type="checkbox"> <span>Перехват: две руки или две ноги могут стоять на одной зацепке</span></label>
         <label class="check"><input id="cross" type="checkbox"> <span>Разрешить скрещивать руки и ноги</span></label>
         <label class="check"><input id="climb" type="checkbox"> <span>Подъём: ходы ведут вверх до верха стены, потом обратно вниз</span></label>
+        <label class="check" id="smallMatchRow"><input id="smallMatch" type="checkbox"> <span>Разрешить сдваиваться на мелких зацепках</span></label>
         <label class="check"><input id="boltOnly" type="checkbox"> <span>На стене только болт-оны (без мелких скрю-онов)</span></label>
       </div>
       <div class="field"><span>Озвучка</span>
@@ -237,7 +239,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   ];
 
   // ---------- settings ----------
-  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, best: {}, voice: "off" };
+  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, best: {}, voice: "off" };
   const LEVEL_TEXT = {
     easy: "Короткие шаги, удобные зацепки под руки, только крупные зацепки, тело не растягивается сильно.",
     medium: "Шаги средней длины; ноги иногда на мелких зацепках для ног.",
@@ -494,7 +496,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   let mode = "mock";
   const playable = () => (settings.boltOnly ? holds.filter((h) => h.set === 1) : holds);
   const gameOptions = () => ({ heightCm: settings.heightCm, allowCross: settings.allowCross, level: settings.level,
-    climb: settings.climb, allowMatch: settings.allowMatch });
+    climb: settings.climb, allowMatch: settings.allowMatch, allowSmallMatch: settings.allowSmallMatch });
   // Score: moves completed before falling; best result per level is kept on this phone.
   let fallen = null;   // {completed, best, record} after «Сорвался»
   const movesWord = (n) => {
@@ -725,8 +727,13 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   $("height").oninput = (e) => { settings.heightCm = +e.target.value; $("heightOut").textContent = settings.heightCm + " см"; save(); game.setOptions({ heightCm: settings.heightCm }); };
   $("climb").checked = !!settings.climb;
   $("climb").onchange = (e) => { settings.climb = e.target.checked; save(); game.setOptions({ climb: settings.climb }); };
+  // «Сдваиваться на мелких» only matters with matching on, so it is greyed out without it.
+  const showSmallMatch = () => { $("smallMatch").disabled = !settings.allowMatch; $("smallMatchRow").classList.toggle("off", !settings.allowMatch); };
   $("match").checked = !!settings.allowMatch;
-  $("match").onchange = (e) => { settings.allowMatch = e.target.checked; save(); game.setOptions({ allowMatch: settings.allowMatch }); };
+  $("match").onchange = (e) => { settings.allowMatch = e.target.checked; save(); game.setOptions({ allowMatch: settings.allowMatch }); showSmallMatch(); };
+  $("smallMatch").checked = !!settings.allowSmallMatch;
+  $("smallMatch").onchange = (e) => { settings.allowSmallMatch = e.target.checked; save(); game.setOptions({ allowSmallMatch: settings.allowSmallMatch }); };
+  showSmallMatch();
   $("cross").checked = settings.allowCross;
   $("cross").onchange = (e) => { settings.allowCross = e.target.checked; save(); game.setOptions({ allowCross: settings.allowCross }); };
   function showLevel() {

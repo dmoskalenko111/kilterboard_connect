@@ -252,6 +252,27 @@ t("twister: matching off by default; when on, limbs sometimes share a hold and r
   }
 });
 
+t("twister: matching is rare (~4% of moves) and never on small holds unless allowed", () => {
+  for (const small of [false, true]) for (const level of Object.keys(Twister.LEVELS)) {
+    let moves = 0, matched = 0, onSmall = 0;
+    for (let g = 0; g < 10; g++) {
+      const game = Twister.create(holds, { level, allowMatch: true, allowSmallMatch: small }, rng(500 + g * 11 + level.length));
+      game.start();
+      for (let i = 0; i < 300; i++) {
+        const s = game.next(); moves++;
+        const p = { ...s.pos, [s.pending.limb]: s.pending.hold };
+        const ids = Object.values(p).map((h) => h.id);
+        for (const h of Object.values(p)) if (ids.filter((x) => x === h.id).length > 1 && h.set !== 1) onSmall++;
+        if (Object.values(s.pos).some((h) => h.id === s.pending.hold.id)) matched++;
+      }
+    }
+    const share = matched / moves;
+    assert.ok(share >= 0.025 && share <= 0.055, `${level} small=${small}: matching ${(share * 100).toFixed(1)}%`);
+    if (!small) assert.strictEqual(onSmall, 0, `${level}: two limbs on one small hold`);
+  }
+  assert.strictEqual(Twister.create(holds, {}).options.allowSmallMatch, false);
+});
+
 t("twister: completed moves counter", () => {
   const game = Twister.create(holds, {}, rng(5));
   assert.strictEqual(game.start().completed, 0);
