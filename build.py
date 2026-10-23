@@ -12,6 +12,7 @@ grades = json.loads((root / "data" / "hand_grades.json").read_text())   # from t
 page = (src / "app.html").read_text(encoding="utf-8")
 page = (page.replace("/*PROTOCOL*/", (src / "protocol.js").read_text(encoding="utf-8"))
             .replace("/*TWISTER*/", (src / "twister.js").read_text(encoding="utf-8"))
+            .replace("/*GRADE*/", (src / "grade.js").read_text(encoding="utf-8"))
             .replace("/*HOLDS*/", json.dumps(holds, separators=(",", ":")))
             .replace("/*GRADES*/", json.dumps(grades, separators=(",", ":"))))
 assert "/*" + "HOLDS*/" not in page

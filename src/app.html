@@ -68,6 +68,8 @@ details.conn[open] > summary { margin-bottom: 12px; }
 .move .limb.idle { color: var(--c1); }
 .move .hint { color: var(--muted); font-size: .92rem; line-height: 1.4; height: 2.8em; overflow: hidden; }
 .move .hint b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.move .grade { font-size: .8rem; color: var(--muted); line-height: 1.4; height: 1.4em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-top: 1px solid var(--line); padding-top: 6px; margin-top: 2px; box-sizing: content-box; }
+.move .grade b { color: var(--fg); font-weight: 600; }
 .move.stuck .limb { color: var(--danger); }
 
 .next { width: 100%; border: 0; border-radius: 16px; padding: 22px 16px; cursor: pointer; background: var(--c2); color: var(--c2-ink);
@@ -144,6 +146,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       <div class="eyebrow"><span id="moveLabel">Старт</span><span id="stepNo"></span></div>
       <div class="limb idle" id="limb">На старт</div>
       <div class="hint" id="hint">Зацепки цвета 1: руки сверху, ноги снизу.</div>
+      <div class="grade" id="grade" title="Оценка по последним 8 ходам: грейды реальных трасс на этих зацепках, длина ходов, растяжки и угол стены. Ориентир, не измерение.">&nbsp;</div>
     </div>
 
     <button class="next" id="next" type="button">Дальше</button>
@@ -170,6 +173,8 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       <summary>Настройки</summary>
       <div class="field"><span>Рост игрока (масштаб шагов)</span>
         <div class="rangeval"><input id="height" type="range" min="140" max="205" step="5" value="175"><output id="heightOut">175 см</output></div></div>
+      <div class="field"><span>Угол стены (для оценки грейда)</span>
+        <div class="rangeval"><input id="angle" type="range" min="0" max="70" step="5" value="30"><output id="angleOut">30°</output></div></div>
       <div class="field"><span>Сложность</span>
         <div class="seg" role="group" aria-label="Сложность" id="levelSeg">
           <button type="button" data-level="easy" aria-pressed="false">Лёгкий</button>
@@ -220,6 +225,9 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 /*TWISTER*/
 </script>
 <script>
+/*GRADE*/
+</script>
+<script>
 (() => {
   const RAW = /*HOLDS*/;
   // Hand-hold grades from 227 000 real Kilter climbs (data/hand_grades.json): [percentile, avg grade, hand-capable screw-on]
@@ -239,7 +247,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   ];
 
   // ---------- settings ----------
-  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, best: {}, voice: "off" };
+  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, best: {}, voice: "off", angle: 30 };
   const LEVEL_TEXT = {
     easy: "Короткие шаги, удобные зацепки под руки, только крупные зацепки, тело не растягивается сильно.",
     medium: "Шаги средней длины; ноги иногда на мелких зацепках для ног.",
@@ -553,7 +561,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       decoder.reset();
       for (const c of Aurora.chunks(bytes)) decoder.feed(c);
       if (mode === "ble" && ble.char) bleSend(bytes);
-      $("moveLabel").textContent = "Проверка карты"; $("stepNo").textContent = "";
+      $("moveLabel").textContent = "Проверка карты"; $("stepNo").textContent = ""; renderGrade();
       $("limb").className = "limb idle"; $("limb").textContent = "Сверьте узор";
       $("hint").textContent = "Узор на стене должен совпасть с превью. «Дальше» — назад к игре.";
       return;
@@ -628,7 +636,32 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     return t;
   }
   let recordSaid = false;   // «Новый рекорд!» once per game, when the best result is beaten
+  // ---------- grade estimate of the recent "route" (src/grade.js) ----------
+  let route = [], routeGrades = [];
+  const handAvg = (h) => (GRADES[h.id] ? GRADES[h.id][1] : null);
+  const estimateAt = (moves) => Grade.estimate(moves, settings.heightCm / 2.54, settings.angle, handAvg);
+  function routePush() {
+    if (!state.pending) return;
+    route.push({ pos: { ...state.pos, [state.pending.limb]: state.pending.hold }, limb: state.pending.limb,
+      from: state.pos[state.pending.limb], to: state.pending.hold });
+    routeGrades.push(estimateAt(route));
+  }
+  function routeRecompute() { routeGrades = route.map((_, i) => estimateAt(route.slice(0, i + 1))); }
+  function renderGrade() {
+    const el = $("grade"), a = `угол ${settings.angle}°`;
+    if (calibrating) { el.textContent = "Во время проверки карты грейд не считается"; return; }
+    if (fallen) {
+      const max = Math.max(-1, ...routeGrades.filter((v) => v != null));
+      el.innerHTML = max < 0 ? `Мало ходов для оценки грейда · ${a}` : `Самый трудный отрезок примерно <b>${Grade.label(max).text}</b>`;
+      return;
+    }
+    const cur = routeGrades.length ? routeGrades[routeGrades.length - 1] : null;
+    el.innerHTML = cur == null ? `Оценка грейда — с ${Grade.MIN_MOVES}-го хода · ${a}`
+      : `Трасса примерно <b>${Grade.label(cur).text}</b> · ${a}`;
+  }
+
   function renderMove() {
+    renderGrade();
     const box = $("move"); box.classList.toggle("stuck", !!state.stuck);
     $("undo").disabled = !state.canUndo || !!fallen;
     $("fell").disabled = !!fallen || calibrating || !state.pending;
@@ -672,7 +705,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     if (calibrating) { calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; push(); return; }
     if (fallen) { restart(); return; }
     const prevPhase = state.phase;
-    state = game.next(); push(); wake();
+    state = game.next(); routePush(); push(); wake();
     if (silent) return;
     const parts = [];
     if (settings.climb && state.phase !== prevPhase) parts.push(state.phase === "down" ? "Наверху. Теперь вниз." : "Снова вверх.");
@@ -690,9 +723,9 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     renderMove();
     voice.say(`Игра окончена. ${movesWord(completed)}.` + (record && best > 0 ? " Новый рекорд!" : !record && best > 0 ? ` Рекорд — ${movesWord(best)}.` : ""));
   }
-  function undo() { if (fallen) return; calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; state = game.undo(); push(); }
+  function undo() { if (fallen) return; calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; state = game.undo(); route.pop(); routeGrades.pop(); push(); }
   function restart(silent) {
-    fallen = null; recordSaid = false; game.setOptions(gameOptions()); state = game.start(); push();
+    fallen = null; recordSaid = false; route = []; routeGrades = []; game.setOptions(gameOptions()); state = game.start(); push();
     if (!silent) voice.say(movePhrase(state));
   }
 
@@ -724,7 +757,9 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   $("modeMock").onclick = () => setMode("mock");
   $("modeBle").onclick = () => setMode("ble");
   $("height").value = settings.heightCm; $("heightOut").textContent = settings.heightCm + " см";
-  $("height").oninput = (e) => { settings.heightCm = +e.target.value; $("heightOut").textContent = settings.heightCm + " см"; save(); game.setOptions({ heightCm: settings.heightCm }); };
+  $("angle").value = settings.angle; $("angleOut").textContent = settings.angle + "°";
+  $("angle").oninput = (e) => { settings.angle = +e.target.value; $("angleOut").textContent = settings.angle + "°"; save(); routeRecompute(); renderGrade(); };
+  $("height").oninput = (e) => { settings.heightCm = +e.target.value; $("heightOut").textContent = settings.heightCm + " см"; save(); game.setOptions({ heightCm: settings.heightCm }); routeRecompute(); renderGrade(); };
   $("climb").checked = !!settings.climb;
   $("climb").onchange = (e) => { settings.climb = e.target.checked; save(); game.setOptions({ climb: settings.climb }); };
   // «Сдваиваться на мелких» only matters with matching on, so it is greyed out without it.

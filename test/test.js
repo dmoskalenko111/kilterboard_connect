@@ -2,6 +2,7 @@ const assert = require("assert");
 const path = require("path");
 const Aurora = require("../src/protocol.js");
 const Twister = require("../src/twister.js");
+const Grade = require("../src/grade.js");
 const raw = require("../holds.json");
 const GR = require("../data/hand_grades.json");
 const holds = raw.map(([id, x, y, led, set, kb]) => ({ id, x, y, led, set, kickboard: !!kb,
@@ -280,6 +281,34 @@ t("twister: completed moves counter", () => {
   assert.strictEqual(game.next().completed, 1);
   assert.strictEqual(game.next().completed, 2);
   assert.strictEqual(game.undo().completed, 1);
+});
+
+function playGrades(level, angle, heightCm = 175, games = 8) {
+  const out = [];
+  for (let g = 0; g < games; g++) {
+    const game = Twister.create(holds, { level, heightCm }, rng(900 + g * 5 + level.length));
+    let s = game.start(); const moves = [];
+    for (let i = 0; i < 80; i++) {
+      s = game.next();
+      moves.push({ pos: { ...s.pos, [s.pending.limb]: s.pending.hold }, limb: s.pending.limb, from: s.pos[s.pending.limb], to: s.pending.hold });
+      const d = Grade.estimate(moves, heightCm / 2.54, angle, (h) => (GR[h.id] ? GR[h.id][1] : null));
+      if (i < Grade.MIN_MOVES - 1) assert.strictEqual(d, null, "no estimate before enough moves");
+      else { assert.ok(d >= 10 && d <= 33); out.push(d); }
+    }
+  }
+  out.sort((a, b) => a - b);
+  return out[Math.floor(out.length / 2)];
+}
+
+t("grade: estimate rises with level and wall angle, and maps to Font/V", () => {
+  const at40 = Object.keys(Twister.LEVELS).map((l) => playGrades(l, 40));
+  for (let i = 1; i < at40.length; i++) assert.ok(at40[i] > at40[i - 1], "levels " + at40.map((v) => v.toFixed(1)));
+  assert.ok(playGrades("medium", 20) < playGrades("medium", 40) - 3, "steeper wall should be graded harder");
+  // plausible bands at 40°: easy around V1–V3, hardcore around V7–V9
+  assert.ok(at40[0] >= 13 && at40[0] <= 17 && at40[3] >= 23 && at40[3] <= 27, at40.map((v) => v.toFixed(1)).join(" "));
+  assert.deepStrictEqual(Grade.label(19.6), { font: "6c", v: "V5", text: "6c / V5" });
+  assert.strictEqual(Grade.label(null), null);
+  console.log("    медианная оценка при 40°:", Object.keys(Twister.LEVELS).map((l, i) => l + " " + Grade.label(at40[i]).text).join(", "));
 });
 
 t("twister: undo restores the previous wall exactly", () => {
