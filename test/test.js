@@ -119,6 +119,7 @@ t("twister: every level x height never gets stuck, with all holds and bolt-ons o
         const s = game.next();
         assert.ok(!s.stuck, `${level} ${heightCm}cm pool=${pool.length} game ${g} step ${i}`);
         if (level === "easy") assert.strictEqual(s.pending.hold.set, 1, "easy uses big holds only");
+        if (s.pending.limb[1] === "H") assert.strictEqual(s.pending.hold.set, 1, `${level}: hand sent to a foothold`);
       }
     }
   }
@@ -156,14 +157,14 @@ t("twister: levels differ — longer moves and more small holds as difficulty ri
       const before = game.snapshot().pos; const s = game.next();
       const from = before[s.pending.limb] || s.pos[s.pending.limb];
       sum += Math.hypot(s.pending.hold.x - from.x, s.pending.hold.y - from.y);
-      if (s.pending.hold.set !== 1) small++;
+      if (s.pending.hold.set !== 1) { small++; assert.ok(s.pending.limb[1] === "F", "only feet go on footholds"); }
     }
     stats[level] = { move: sum / n, small: small / n };
   }
   assert.ok(stats.easy.move < stats.medium.move && stats.medium.move < stats.hard.move && stats.hard.move < stats.hardcore.move, JSON.stringify(stats));
   assert.ok(stats.easy.small === 0 && stats.hard.small > stats.medium.small && stats.hardcore.small > stats.hard.small, JSON.stringify(stats));
   console.log("    средний шаг, см:", Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, Math.round(v.move * 2.54)])),
-    "доля мелких:", Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, Math.round(v.small * 100) + "%"])));
+    "доля ходов на мелкие зацепки для ног:", Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, Math.round(v.small * 100) + "%"])));
 });
 
 t("twister: undo restores the previous wall exactly", () => {

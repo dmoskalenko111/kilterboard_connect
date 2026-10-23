@@ -14,13 +14,18 @@ const Twister = (() => {
   //   hands    max distance between the two hands        feet   between the two feet
   //   body     max distance from any hand to any foot     lean   sideways offset of hands vs feet midpoints
   //   reach    max length of one move                     minMove  shortest move allowed
-  //   bigHoldsOnly / smallBias / farBias  hold size and move length preferences
+  //   feetBigOnly   feet only on large holds;   footSmallBias  chance a foot is sent to a small foothold
+  //   farBias       chance to pick from the longer half of possible moves
+  // Hands always go on hand holds. Kilter Original has 323 bolt-on hand holds and 153 screw-on
+  // footholds (the board's own data gives every screw-on the default role "foot"), so a screw-on is
+  // never given to a hand; harder levels make the feet, not the hands, use the small holds.
   const LEVELS = {
-    easy:     { hands: 0.55, feet: 0.45, body: 0.95, lean: 0.30, reach: 0.32, minMove: 0.03, bigHoldsOnly: true,  smallBias: 0,    farBias: 0 },
-    medium:   { hands: 0.65, feet: 0.55, body: 1.05, lean: 0.36, reach: 0.40, minMove: 0.03, bigHoldsOnly: false, smallBias: 0,    farBias: 0 },
-    hard:     { hands: 0.75, feet: 0.65, body: 1.15, lean: 0.42, reach: 0.50, minMove: 0.12, bigHoldsOnly: false, smallBias: 0.6,  farBias: 0.7 },
-    hardcore: { hands: 0.85, feet: 0.75, body: 1.22, lean: 0.48, reach: 0.58, minMove: 0.20, bigHoldsOnly: false, smallBias: 0.95, farBias: 0.9 },
+    easy:     { hands: 0.55, feet: 0.45, body: 0.95, lean: 0.30, reach: 0.32, minMove: 0.03, feetBigOnly: true,  footSmallBias: 0,   farBias: 0 },
+    medium:   { hands: 0.65, feet: 0.55, body: 1.05, lean: 0.36, reach: 0.40, minMove: 0.03, feetBigOnly: false, footSmallBias: 0,   farBias: 0 },
+    hard:     { hands: 0.75, feet: 0.65, body: 1.15, lean: 0.42, reach: 0.50, minMove: 0.12, feetBigOnly: false, footSmallBias: 0.6, farBias: 0.7 },
+    hardcore: { hands: 0.85, feet: 0.75, body: 1.22, lean: 0.48, reach: 0.58, minMove: 0.20, feetBigOnly: false, footSmallBias: 0.9, farBias: 0.9 },
   };
+  const handHold = (h) => h.set === 1;        // bolt-on; screw-ons (set 20) are footholds
   // Absolute anatomy limits (fractions of H) that no level may exceed; used by the tests.
   const ANATOMY = { hands: 0.9, feet: 0.8, body: 1.25 };
 
@@ -46,13 +51,13 @@ const Twister = (() => {
 
     function start() {
       const h = H(), used = new Set();
-      const big = (x) => !L().bigHoldsOnly || x.set === 1;
+      const ok = (l, x) => (isHand(l) ? handHold(x) && x.y >= 24 : !L().feetBigOnly || handHold(x));
       const cx = 72 + (rng() - 0.5) * 24;
       // Feet together low, hands shoulder-width at about chest height: a relaxed start for any level.
       const plan = { LF: [cx - 7, 8], RF: [cx + 7, 8], LH: [cx - 0.16 * h, 8 + 0.75 * h], RH: [cx + 0.16 * h, 8 + 0.75 * h] };
       pos = {};
       for (const l of ["LF", "RF", "LH", "RH"]) {
-        const hold = nearest(plan[l][0], plan[l][1], used, (x) => big(x) && (isHand(l) ? x.y >= 24 : true));
+        const hold = nearest(plan[l][0], plan[l][1], used, (x) => ok(l, x));
         pos[l] = hold; used.add(hold.id);
       }
       pending = null; lastLimb = null; history = []; step = 0;
@@ -64,7 +69,7 @@ const Twister = (() => {
       const h = H(), lv = L();
       const d = dist(pos[limb], c);
       if (d < lv.minMove * h || d > reach) return false;
-      if (lv.bigHoldsOnly && c.set !== 1) return false;
+      if (isHand(limb) ? !handHold(c) : lv.feetBigOnly && !handHold(c)) return false;
       const np = { ...pos, [limb]: c };
       if (np.LH.y < 24 || np.RH.y < 24) return false;                         // no hands on kickboard
       if (Math.min(np.LH.y, np.RH.y) - Math.max(np.LF.y, np.RF.y) < 0.25 * h) return false; // hands above feet
@@ -109,8 +114,8 @@ const Twister = (() => {
     function choose(limb, c) {
       const lv = L();
       let pool = c;
-      if (lv.smallBias && rng() < lv.smallBias) {
-        const small = pool.filter((h) => h.set !== 1);
+      if (!isHand(limb) && lv.footSmallBias && rng() < lv.footSmallBias) {
+        const small = pool.filter((h) => !handHold(h));
         if (small.length) pool = small;
       }
       if (lv.farBias && rng() < lv.farBias && pool.length > 1) {

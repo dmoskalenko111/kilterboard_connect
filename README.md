@@ -38,6 +38,7 @@
 | `src/app.html` | Интерфейс, мок и Bluetooth-транспорт |
 | `holds.json` | 476 зацепок: `[placement_id, x, y, led, set_id, кикборд]`, координаты в дюймах |
 | `emulator/` | Эмулятор стены для Linux: ноутбук притворяется стеной, см. `emulator/README.md` |
+| `tools/hold_stats.py` | Статистика зацепок из базы Kilter: как часто каждую берут рукой и ногой (запуск — в начале файла) |
 | `test/` | Тесты: `node test/test.js`, `python3 test/test_emulator_ble.py` и сверка эмулятора с кодировщиком (`test_emulator.py`) |
 
 После правок в `src/` пересоберите: `python3 build.py`.
