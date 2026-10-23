@@ -25,6 +25,10 @@ const Grade = (() => {
     feet: 2.1,      // share of foot placements on small footholds
     angle: 0.2,     // per degree of wall angle (10° ≈ one V grade)
   };
+  // Median estimate of a whole game at 40° for each level, measured by test/test.js (player 175 cm). Shown as the
+  // "about this grade" caption of the fine difficulty scale; other angles shift it by K.angle per degree.
+  const LEVEL_AT_40 = { d1: 14.4, d2: 14.6, d3: 15.1, d4: 16.6, d5: 17.5, d6: 19.6, d7: 22.4, d8: 23.6, d9: 24.6, d10: 25.9 };
+  const levelLabel = (key, angle) => label(Math.max(10, Math.min(33, LEVEL_AT_40[key] + K.angle * (angle - REF_ANGLE))));
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
   // moves: [{ pos, limb, from, to }], heightIn: player height in inches, angle: wall angle in degrees,
@@ -58,6 +62,6 @@ const Grade = (() => {
     return { font, v, text: `${font} / ${v}` };
   }
 
-  return { estimate, label, TABLE, WINDOW, MIN_MOVES, K };
+  return { estimate, label, levelLabel, LEVEL_AT_40, TABLE, WINDOW, MIN_MOVES, K };
 })();
 if (typeof module !== "undefined") module.exports = Grade;

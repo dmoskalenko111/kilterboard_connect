@@ -89,6 +89,40 @@ details.conn[open] > summary { margin-bottom: 12px; }
 .btn:disabled { opacity: .4; cursor: default; }
 .btn.fell:not(:disabled) { border-color: var(--danger); color: var(--danger); }
 .checks { display: grid; gap: 12px; }
+#levelSeg button:disabled, .fine button:disabled { opacity: .4; cursor: default; }
+.fine { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: -4px; }
+.fine button { border: 1px solid var(--line); background: transparent; border-radius: 10px; padding: 8px 0; cursor: pointer; font-variant-numeric: tabular-nums; color: var(--fg); }
+.fine button[aria-pressed="true"]:not(:disabled) { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+/* records */
+#recordsCard > summary { gap: 8px; }
+#recordsCard > summary .sumr { margin-left: auto; color: var(--muted); font-weight: 400; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-sub { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 14px 0 6px; }
+.rec-sub:first-of-type { margin-top: 0; }
+.rec-tbl { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.rec-tbl td { padding: 7px 0; border-top: 1px solid var(--line); vertical-align: baseline; }
+.rec-tbl tr:first-child td { border-top: 0; }
+.rec-tbl td.lv { width: 30%; }
+.rec-tbl td.n { font-family: var(--font-display); font-weight: 700; font-size: 1.35rem; width: 16%; }
+.rec-tbl td.n.none { color: var(--muted); font-family: var(--font-body); font-weight: 400; font-size: .9rem; }
+.rec-tbl td.meta { color: var(--muted); font-size: .8rem; text-align: right; }
+.rec-tbl td.meta b { color: var(--fg); font-weight: 600; }
+.rec-tbl tr.top td.n { color: var(--c1); }
+.tag { display: inline-block; font-size: .7rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; margin-left: 4px; white-space: nowrap; }
+.grid10 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.grid10 button { border: 1px solid var(--line); border-radius: 10px; padding: 5px 0 3px; background: transparent; cursor: pointer; text-align: center; color: var(--fg); }
+.grid10 .l { display: block; font-size: .7rem; color: var(--muted); }
+.grid10 .v { display: block; font-family: var(--font-display); font-weight: 700; font-size: 1.25rem; line-height: 1.1; }
+.grid10 .empty .v { color: var(--muted); font-weight: 400; font-size: 1rem; }
+.grid10 .top { border-color: var(--c1); } .grid10 .top .v { color: var(--c1); }
+.grid10 [aria-pressed="true"] { box-shadow: 0 0 0 1px var(--fg) inset; }
+.rec-detail { font-size: .82rem; color: var(--muted); margin: 6px 0 0; min-height: 1.4em; }
+.rec-detail b { color: var(--fg); font-weight: 600; }
+.last { display: grid; gap: 4px; font-size: .86rem; }
+.last div { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
+.last div b { color: var(--fg); font-weight: 600; }
+.last .rec { color: var(--c1); }
+.btn.warn { color: var(--danger); border-color: var(--danger); }
+.confirm-q { font-weight: 600; margin: 12px 0 0; }
 .check.off { opacity: .45; cursor: default; }
 label.check > span { min-width: 0; font-size: 1rem; color: var(--fg); letter-spacing: normal; line-height: 1.35; }
 
@@ -199,6 +233,9 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
         <label class="check"><input id="climb" type="checkbox"> <span>Подъём: ходы ведут вверх до верха стены, потом обратно вниз</span></label>
         <label class="check" id="smallMatchRow"><input id="smallMatch" type="checkbox"> <span>Разрешить сдваиваться на мелких зацепках</span></label>
         <label class="check"><input id="boltOnly" type="checkbox"> <span>На стене только болт-оны (без мелких скрю-онов)</span></label>
+        <label class="check"><input id="fine" type="checkbox"> <span>Подробная настройка сложности</span></label>
+        <div class="fine" role="group" aria-label="Уровень от 1 до 10" id="fineSeg"></div>
+        <p class="note" id="fineNote"></p>
       </div>
       <div class="field"><span>Озвучка</span>
         <div class="seg" role="group" aria-label="Озвучка" id="voiceSeg">
@@ -219,6 +256,11 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
           в порядке кружков выбора цвета. Если стена отражена или узор сдвинут, напишите, что видите. «Дальше» вернёт игру.</p></div>
       <div class="field"><span>Версия протокола мока</span>
         <select id="mockApi"><option value="3">API 3 (новые контроллеры)</option><option value="2">API 2 (старые)</option></select></div>
+    </details>
+
+    <details class="card" id="recordsCard">
+      <summary><span>Рекорды</span><span class="sumr" id="recSum"></span></summary>
+      <div id="recBody"></div>
     </details>
 
     <details class="card" id="logCard">
@@ -397,6 +439,22 @@ const Twister = (() => {
   const MATCH_SHARE = 0.04;           // matching moves: about 4% of all moves when matching is on
   // Grade percentile of a hand hold: 0 = used in the easiest real climbs, 1 = the hardest; 0.5 if unknown.
   const gradeOf = (h) => (h.handGrade == null ? 0.5 : h.handGrade);
+  // Fine scale 1..10 ("d1".."d10"): 3, 5, 7, 9 are exactly easy, medium, hard, hardcore; 1 and 10 are new
+  // ends (1 easier than easy, 10 at the edge of what a body can do, still within ANATOMY below);
+  // 2, 4, 6, 8 sit halfway between their neighbours. Roughly level N ≈ V(N−1) at 40°.
+  const FINE_ENDS = {
+    d1:  { hands: 0.45, feet: 0.38, body: 0.85, lean: 0.22, reach: 0.22, minMove: 0.03, feetBigOnly: true,  footSmallBias: 0,    farBias: 0,    gradeBias: -7, handAltRate: 0 },
+    d10: { hands: 0.89, feet: 0.79, body: 1.245, lean: 0.52, reach: 0.64, minMove: 0.24, feetBigOnly: false, footSmallBias: 0.97, farBias: 0.95, gradeBias: 4,  handAltRate: 0.2 },
+  };
+  const anchor = { 1: FINE_ENDS.d1, 3: LEVELS.easy, 5: LEVELS.medium, 7: LEVELS.hard, 9: LEVELS.hardcore, 10: FINE_ENDS.d10 };
+  for (let n = 1; n <= 10; n++) {
+    if (anchor[n]) { LEVELS["d" + n] = { ...anchor[n] }; continue; }
+    const a = anchor[n - 1], b = anchor[n + 1], mid = {};
+    for (const k of Object.keys(a)) mid[k] = typeof a[k] === "boolean" ? (n <= 3 ? true : false) : +((a[k] + b[k]) / 2).toFixed(4);
+    LEVELS["d" + n] = mid;
+  }
+  const MAIN_LEVELS = ["easy", "medium", "hard", "hardcore"];
+  const FINE_LEVELS = Array.from({ length: 10 }, (_, i) => "d" + (i + 1));
   // Absolute anatomy limits (fractions of H) that no level may exceed; used by the tests.
   const ANATOMY = { hands: 0.9, feet: 0.8, body: 1.25 };
 
@@ -576,7 +634,7 @@ const Twister = (() => {
     return { start, next, undo, snapshot, setOptions, get options() { return { ...opt }; } };
   }
 
-  return { create, LIMBS, NAMES, LEVELS, ANATOMY };
+  return { create, LIMBS, NAMES, LEVELS, ANATOMY, MAIN_LEVELS, FINE_LEVELS };
 })();
 if (typeof module !== "undefined") module.exports = Twister;
 
@@ -609,6 +667,10 @@ const Grade = (() => {
     feet: 2.1,      // share of foot placements on small footholds
     angle: 0.2,     // per degree of wall angle (10° ≈ one V grade)
   };
+  // Median estimate of a whole game at 40° for each level, measured by test/test.js (player 175 cm). Shown as the
+  // "about this grade" caption of the fine difficulty scale; other angles shift it by K.angle per degree.
+  const LEVEL_AT_40 = { d1: 14.4, d2: 14.6, d3: 15.1, d4: 16.6, d5: 17.5, d6: 19.6, d7: 22.4, d8: 23.6, d9: 24.6, d10: 25.9 };
+  const levelLabel = (key, angle) => label(Math.max(10, Math.min(33, LEVEL_AT_40[key] + K.angle * (angle - REF_ANGLE))));
   const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
   // moves: [{ pos, limb, from, to }], heightIn: player height in inches, angle: wall angle in degrees,
@@ -642,7 +704,7 @@ const Grade = (() => {
     return { font, v, text: `${font} / ${v}` };
   }
 
-  return { estimate, label, TABLE, WINDOW, MIN_MOVES, K };
+  return { estimate, label, levelLabel, LEVEL_AT_40, TABLE, WINDOW, MIN_MOVES, K };
 })();
 if (typeof module !== "undefined") module.exports = Grade;
 
@@ -667,7 +729,7 @@ if (typeof module !== "undefined") module.exports = Grade;
   ];
 
   // ---------- settings ----------
-  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, best: {}, voice: "off", angle: 30 };
+  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, best: {}, voice: "off", angle: 30, fine: false, fineLevel: 5, records: {}, games: [] };
   const LEVEL_TEXT = {
     easy: "Короткие шаги, удобные зацепки под руки, только крупные зацепки, тело не растягивается сильно.",
     medium: "Шаги средней длины; ноги иногда на мелких зацепках для ног.",
@@ -675,8 +737,19 @@ if (typeof module !== "undefined") module.exports = Grade;
     hardcore: "Шаги и растяжки у предела тела, трудные зацепки под руки, иногда мелкие — те, что в реальных трассах берут рукой с 7a+. Для сильных и гибких.",
   };
   const LEVEL_SHORT = { easy: "лёгкий", medium: "средний", hard: "сложный", hardcore: "хардкор" };
+  // Fine scale 1–10: "d1".."d10" in src/twister.js; 3/5/7/9 play like лёгкий/средний/сложный/хардкор.
+  const FINE_FROM = { easy: 3, medium: 5, hard: 7, hardcore: 9 };
+  const levelKey = () => (settings.fine ? "d" + settings.fineLevel : settings.level);
+  const levelName = (key) => LEVEL_SHORT[key] || "уровень " + key.slice(1);
+  const smallSaid = (key) => key === "hard" || key === "hardcore" || (key[0] === "d" && +key.slice(1) >= 7);
   let settings = { ...defaults };
   try { Object.assign(settings, JSON.parse(localStorage.getItem("kilterTwister") || "{}")); } catch (e) {}
+  settings.fine = !!settings.fine;
+  settings.fineLevel = Math.round(settings.fineLevel);
+  if (!(settings.fineLevel >= 1 && settings.fineLevel <= 10)) settings.fineLevel = 5;
+  if (!["easy", "medium", "hard", "hardcore"].includes(settings.level)) settings.level = "medium";
+  if (!settings.records || typeof settings.records !== "object") settings.records = {};
+  if (!Array.isArray(settings.games)) settings.games = [];
   const save = () => { try { localStorage.setItem("kilterTwister", JSON.stringify(settings)); } catch (e) {} };
 
   function applyColors() {
@@ -923,7 +996,7 @@ if (typeof module !== "undefined") module.exports = Grade;
   // ---------- game ----------
   let mode = "mock";
   const playable = () => (settings.boltOnly ? holds.filter((h) => h.set === 1) : holds);
-  const gameOptions = () => ({ heightCm: settings.heightCm, allowCross: settings.allowCross, level: settings.level,
+  const gameOptions = () => ({ heightCm: settings.heightCm, allowCross: settings.allowCross, level: levelKey(),
     climb: settings.climb, allowMatch: settings.allowMatch, allowSmallMatch: settings.allowSmallMatch });
   // Score: moves completed before falling; best result per level is kept on this phone.
   let fallen = null;   // {completed, best, record} after «Сорвался»
@@ -1046,7 +1119,7 @@ if (typeof module !== "undefined") module.exports = Grade;
     const partner = Twister.LIMBS.find((l) => l !== limb && s.pos[l].id === hold.id);
     if (partner) return `${Twister.NAMES[limb]} на зацепку ${OF_LIMB[partner]}.`;
     let t = Twister.NAMES[limb];
-    if (hold.set !== 1 && (settings.level === "hard" || settings.level === "hardcore")) t += ", на мелкую";
+    if (hold.set !== 1 && smallSaid(levelKey())) t += ", на мелкую";
     t += ".";
     if (settings.voice === "full") {
       const dx = hold.x - from.x, dy = hold.y - from.y;
@@ -1086,11 +1159,11 @@ if (typeof module !== "undefined") module.exports = Grade;
     $("undo").disabled = !state.canUndo || !!fallen;
     $("fell").disabled = !!fallen || calibrating || !state.pending;
     $("next").textContent = fallen ? "Заново" : "Дальше";
-    const best = bestFor(settings.level);
-    $("stepNo").textContent = (state.step ? `ход ${state.step} · ` : "") + (best ? `рекорд ${best} · ` : "") + LEVEL_SHORT[settings.level];
+    const best = bestFor(levelKey());
+    $("stepNo").textContent = (state.step ? `ход ${state.step} · ` : "") + (best ? `рекорд ${best} · ` : "") + levelName(levelKey());
     if (fallen) {
       $("moveLabel").textContent = "Результат";
-      $("stepNo").textContent = LEVEL_SHORT[settings.level];
+      $("stepNo").textContent = levelName(fallen.key);
       $("limb").className = "limb idle"; $("limb").textContent = movesWord(fallen.completed);
       $("hint").innerHTML = fallen.record
         ? (fallen.best ? `<b>Новый рекорд!</b> Прежний: ${movesWord(fallen.best)}.` : "<b>Первый результат на этом уровне.</b>")
@@ -1129,18 +1202,26 @@ if (typeof module !== "undefined") module.exports = Grade;
     if (silent) return;
     const parts = [];
     if (settings.climb && state.phase !== prevPhase) parts.push(state.phase === "down" ? "Наверху. Теперь вниз." : "Снова вверх.");
-    const done = state.completed, best = bestFor(settings.level);
+    const done = state.completed, best = bestFor(levelKey());
     if (!recordSaid && best > 0 && done > best) { parts.push("Новый рекорд!"); recordSaid = true; }
     parts.push(movePhrase(state));
     voice.say(parts.join(" "));
   }
   function fell() {
     if (fallen || calibrating || !state.pending) return;
-    const completed = state.completed, best = bestFor(settings.level), record = completed > best;
-    if (record) { settings.best = { ...(settings.best || {}), [settings.level]: completed }; save(); }
-    fallen = { completed, best, record };
-    log(`Сорвался: ${movesWord(completed)} на уровне «${LEVEL_SHORT[settings.level]}»` + (record ? ", новый рекорд" : ""));
-    renderMove();
+    const key = levelKey(), completed = state.completed, best = bestFor(key), record = completed > best;
+    const grades = routeGrades.filter((v) => v != null), grade = grades.length ? +Math.max(...grades).toFixed(1) : null;
+    const date = Date.now();
+    if (record) {
+      settings.best = { ...(settings.best || {}), [key]: completed };
+      const tags = [settings.climb && "climb", settings.allowMatch && "match", settings.allowCross && "cross"].filter(Boolean);
+      settings.records = { ...(settings.records || {}), [key]: { n: completed, date, grade, angle: settings.angle, height: settings.heightCm, tags } };
+    }
+    settings.games = [{ date, key, n: completed, grade, record }, ...(settings.games || [])].slice(0, 5);
+    save();
+    fallen = { completed, best, record, key };
+    log(`Сорвался: ${movesWord(completed)} на уровне «${levelName(key)}»` + (record ? ", новый рекорд" : ""));
+    renderMove(); renderRecords();
     voice.say(`Игра окончена. ${movesWord(completed)}.` + (record && best > 0 ? " Новый рекорд!" : !record && best > 0 ? ` Рекорд — ${movesWord(best)}.` : ""));
   }
   function undo() { if (fallen) return; calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; state = game.undo(); route.pop(); routeGrades.pop(); push(); }
@@ -1151,6 +1232,56 @@ if (typeof module !== "undefined") module.exports = Grade;
 
   let lock = null;
   async function wake() { try { if (!lock && navigator.wakeLock) { lock = await navigator.wakeLock.request("screen"); lock.addEventListener("release", () => (lock = null)); } } catch (e) {} }
+
+  // ---------- records (kept in this browser only, like the settings) ----------
+  const TAG_NAME = { climb: "подъём", match: "перехват", cross: "скрещивание" };
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const ddmm = (ms) => { const d = new Date(ms); return String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0"); };
+  const LEVEL_TITLE = { easy: "Лёгкий", medium: "Средний", hard: "Сложный", hardcore: "Хардкор" };
+  let recPick = null, recConfirm = false;
+  // details of one record: grade · angle · height · date + tags; records from before this version only have the count
+  function recMeta(key, withTags = true) {
+    const r = settings.records[key];
+    if (!r || r.n !== bestFor(key)) return "—";
+    const parts = [r.grade != null ? `<b>${Grade.label(r.grade).text}</b>` : "грейд —", r.angle + "°", r.height + " см", ddmm(r.date)];
+    return parts.join(" · ") + (withTags ? (r.tags || []).map((t) => `<span class="tag">${TAG_NAME[t] || esc(t)}</span>`).join("") : "");
+  }
+  function renderRecords() {
+    const best = settings.best || {};
+    const keys = Object.keys(best).filter((k) => best[k] > 0);
+    const top = keys.reduce((a, k) => (a && best[a] >= best[k] ? a : k), null);
+    $("recSum").textContent = top ? `лучший: ${movesWord(best[top])} · ${levelName(top)}` : "пока нет";
+    if (recConfirm) {
+      $("recBody").innerHTML = `<p class="confirm-q">Удалить все рекорды и историю игр?</p>
+        <div class="row" style="margin-top:10px"><button class="btn warn" type="button" id="recYes">Удалить</button><button class="btn" type="button" id="recNo">Отмена</button></div>`;
+      $("recYes").onclick = () => { settings.best = {}; settings.records = {}; settings.games = []; save(); recConfirm = false; recPick = null; renderRecords(); renderMove(); };
+      $("recNo").onclick = () => { recConfirm = false; renderRecords(); };
+      return;
+    }
+    const mainTop = Twister.MAIN_LEVELS.reduce((a, k) => ((best[k] || 0) > (best[a] || 0) ? k : a), Twister.MAIN_LEVELS[0]);
+    const rows = Twister.MAIN_LEVELS.map((k) => best[k]
+      ? `<tr${k === mainTop ? ' class="top"' : ""}><td class="lv">${LEVEL_TITLE[k]}</td><td class="n">${best[k]}</td><td class="meta">${recMeta(k)}</td></tr>`
+      : `<tr><td class="lv">${LEVEL_TITLE[k]}</td><td class="n none">—</td><td class="meta">ещё не играли</td></tr>`).join("");
+    const fineTop = Twister.FINE_LEVELS.reduce((a, k) => ((best[k] || 0) > (best[a] || 0) ? k : a), "d1");
+    const cells = Twister.FINE_LEVELS.map((k, i) => {
+      const cls = [best[k] ? "" : "empty", best[k] && k === fineTop ? "top" : ""].filter(Boolean).join(" ");
+      return `<button type="button" data-k="${k}" class="${cls}" aria-pressed="${k === recPick}"><span class="l">${i + 1}</span><span class="v">${best[k] || "—"}</span></button>`;
+    }).join("");
+    const pick = recPick ? (best[recPick] ? `Уровень ${recPick.slice(1)}: <b>${movesWord(best[recPick])}</b> · ${recMeta(recPick)}` : `Уровень ${recPick.slice(1)}: ещё не играли`)
+      : "Нажмите на уровень, чтобы увидеть подробности.";
+    const games = (settings.games || []).map((g) => `<div><span>${ddmm(g.date)} · ${levelName(g.key)}</span>` +
+      (g.record ? `<span class="rec"><b>${movesWord(g.n)}</b> · рекорд</span>` : `<span><b>${movesWord(g.n)}</b>${g.grade != null ? " · " + Grade.label(g.grade).text : ""}</span>`) + "</div>").join("")
+      || '<div><span>Пока нет сыгранных игр.</span></div>';
+    $("recBody").innerHTML = `<div class="rec-sub">Уровни</div><table class="rec-tbl">${rows}</table>
+      <div class="rec-sub">Подробная шкала</div><div class="grid10">${cells}</div><p class="rec-detail" id="recDetail">${pick}</p>
+      <div class="rec-sub">Последние игры</div><div class="last">${games}</div>
+      <div class="row" style="margin-top:12px"><button class="btn warn" type="button" id="recReset"${keys.length || settings.games.length ? "" : " disabled"}>Сбросить рекорды</button></div>
+      <p class="note" style="margin-top:10px">Рекорды хранятся только в этом телефоне. В строке рекорда — самый трудный отрезок той игры, угол стены, рост и дата;
+        метки показывают включённые «Подъём», «Перехват» и «Скрещивание». У рекордов из прежней версии подробностей нет.</p>`;
+    for (const b of $("recBody").querySelectorAll(".grid10 button")) b.onclick = () => { recPick = recPick === b.dataset.k ? null : b.dataset.k; renderRecords(); };
+    $("recReset").onclick = () => { recConfirm = true; renderRecords(); };
+  }
+  renderRecords();
 
   // ---------- wiring ----------
   $("next").onclick = () => next();
@@ -1178,7 +1309,7 @@ if (typeof module !== "undefined") module.exports = Grade;
   $("modeBle").onclick = () => setMode("ble");
   $("height").value = settings.heightCm; $("heightOut").textContent = settings.heightCm + " см";
   $("angle").value = settings.angle; $("angleOut").textContent = settings.angle + "°";
-  $("angle").oninput = (e) => { settings.angle = +e.target.value; $("angleOut").textContent = settings.angle + "°"; save(); routeRecompute(); renderGrade(); };
+  $("angle").oninput = (e) => { settings.angle = +e.target.value; $("angleOut").textContent = settings.angle + "°"; save(); routeRecompute(); renderGrade(); showFineNote(); };
   $("height").oninput = (e) => { settings.heightCm = +e.target.value; $("heightOut").textContent = settings.heightCm + " см"; save(); game.setOptions({ heightCm: settings.heightCm }); routeRecompute(); renderGrade(); };
   $("climb").checked = !!settings.climb;
   $("climb").onchange = (e) => { settings.climb = e.target.checked; save(); game.setOptions({ climb: settings.climb }); };
@@ -1191,12 +1322,40 @@ if (typeof module !== "undefined") module.exports = Grade;
   showSmallMatch();
   $("cross").checked = settings.allowCross;
   $("cross").onchange = (e) => { settings.allowCross = e.target.checked; save(); game.setOptions({ allowCross: settings.allowCross }); };
-  function showLevel() {
-    for (const b of $("levelSeg").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.level === settings.level));
-    $("levelNote").textContent = LEVEL_TEXT[settings.level] + " Действует со следующего хода; для нового старта нажмите «Новая игра».";
+  const APPLIES = " Действует со следующего хода; для нового старта нажмите «Новая игра».";
+  for (let n = 1; n <= 10; n++) {
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.fine = n; b.textContent = n; b.setAttribute("aria-label", "Уровень " + n);
+    b.onclick = () => { settings.fineLevel = n; levelChanged(); };
+    $("fineSeg").appendChild(b);
   }
-  for (const b of $("levelSeg").querySelectorAll("button")) b.onclick = () => {
-    settings.level = b.dataset.level; save(); game.setOptions({ level: settings.level }); showLevel(); renderMove();
+  function showFineNote() {
+    if (!settings.fine) {
+      $("fineNote").textContent = "Шкала от 1 до 10: 3, 5, 7 и 9 — то же, что лёгкий, средний, сложный и хардкор; 1–2 проще лёгкого, 10 — труднее хардкора, на грани возможностей.";
+      return;
+    }
+    const n = settings.fineLevel, g = Grade.levelLabel("d" + n, settings.angle);
+    const same = { 3: "лёгкий", 5: "средний", 7: "сложный", 9: "хардкор" }[n];
+    $("fineNote").textContent = `Уровень ${n} · примерно ${g.text} при угле ${settings.angle}°` +
+      (same ? ` (как «${same}»)` : n < 3 ? " (проще лёгкого)" : n === 10 ? " (труднее хардкора, на грани возможностей)" : "") + "." + APPLIES;
+  }
+  function showLevel() {
+    for (const b of $("levelSeg").querySelectorAll("button")) {
+      b.setAttribute("aria-pressed", String(!settings.fine && b.dataset.level === settings.level)); b.disabled = settings.fine;
+    }
+    for (const b of $("fineSeg").querySelectorAll("button")) {
+      b.setAttribute("aria-pressed", String(settings.fine && +b.dataset.fine === settings.fineLevel)); b.disabled = !settings.fine;
+    }
+    $("fine").checked = settings.fine;
+    $("levelNote").textContent = settings.fine ? "Выбрана подробная шкала: уровень от 1 до 10 ниже." : LEVEL_TEXT[settings.level] + APPLIES;
+    showFineNote();
+  }
+  function levelChanged() { save(); game.setOptions({ level: levelKey() }); showLevel(); renderMove(); }
+  for (const b of $("levelSeg").querySelectorAll("button")) b.onclick = () => { settings.level = b.dataset.level; levelChanged(); };
+  $("fine").onchange = (e) => {
+    settings.fine = e.target.checked;
+    if (settings.fine) settings.fineLevel = FINE_FROM[settings.level] || 5;   // start on the same difficulty
+    levelChanged();
   };
   function showVoice() {
     for (const b of $("voiceSeg").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.voice === settings.voice));

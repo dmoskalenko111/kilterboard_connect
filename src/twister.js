@@ -41,6 +41,22 @@ const Twister = (() => {
   const MATCH_SHARE = 0.04;           // matching moves: about 4% of all moves when matching is on
   // Grade percentile of a hand hold: 0 = used in the easiest real climbs, 1 = the hardest; 0.5 if unknown.
   const gradeOf = (h) => (h.handGrade == null ? 0.5 : h.handGrade);
+  // Fine scale 1..10 ("d1".."d10"): 3, 5, 7, 9 are exactly easy, medium, hard, hardcore; 1 and 10 are new
+  // ends (1 easier than easy, 10 at the edge of what a body can do, still within ANATOMY below);
+  // 2, 4, 6, 8 sit halfway between their neighbours. Roughly level N ≈ V(N−1) at 40°.
+  const FINE_ENDS = {
+    d1:  { hands: 0.45, feet: 0.38, body: 0.85, lean: 0.22, reach: 0.22, minMove: 0.03, feetBigOnly: true,  footSmallBias: 0,    farBias: 0,    gradeBias: -7, handAltRate: 0 },
+    d10: { hands: 0.89, feet: 0.79, body: 1.245, lean: 0.52, reach: 0.64, minMove: 0.24, feetBigOnly: false, footSmallBias: 0.97, farBias: 0.95, gradeBias: 4,  handAltRate: 0.2 },
+  };
+  const anchor = { 1: FINE_ENDS.d1, 3: LEVELS.easy, 5: LEVELS.medium, 7: LEVELS.hard, 9: LEVELS.hardcore, 10: FINE_ENDS.d10 };
+  for (let n = 1; n <= 10; n++) {
+    if (anchor[n]) { LEVELS["d" + n] = { ...anchor[n] }; continue; }
+    const a = anchor[n - 1], b = anchor[n + 1], mid = {};
+    for (const k of Object.keys(a)) mid[k] = typeof a[k] === "boolean" ? (n <= 3 ? true : false) : +((a[k] + b[k]) / 2).toFixed(4);
+    LEVELS["d" + n] = mid;
+  }
+  const MAIN_LEVELS = ["easy", "medium", "hard", "hardcore"];
+  const FINE_LEVELS = Array.from({ length: 10 }, (_, i) => "d" + (i + 1));
   // Absolute anatomy limits (fractions of H) that no level may exceed; used by the tests.
   const ANATOMY = { hands: 0.9, feet: 0.8, body: 1.25 };
 
@@ -220,6 +236,6 @@ const Twister = (() => {
     return { start, next, undo, snapshot, setOptions, get options() { return { ...opt }; } };
   }
 
-  return { create, LIMBS, NAMES, LEVELS, ANATOMY };
+  return { create, LIMBS, NAMES, LEVELS, ANATOMY, MAIN_LEVELS, FINE_LEVELS };
 })();
 if (typeof module !== "undefined") module.exports = Twister;
