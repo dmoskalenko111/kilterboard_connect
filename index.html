@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#11151b">
+<title>Kilter Твистер</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400&display=swap">
+<style>
+/* Layout: one-thumb phone controller — wall preview on top, the move card and a big "Дальше" below; side by side on wide screens. */
+:root {
+  /* Deliberately dark-only: it is a gym-at-night controller and LED colours read best on a dark wall. */
+  color-scheme: dark;
+  --bg: #11151b;          /* hall at night, slight blue */
+  --panel: #191f27;       /* controls surface */
+  --line: #2b3440;        /* dividers, outlines */
+  --fg: #e9edf2;
+  --muted: #8d98a7;
+  --ply: #2a2520;         /* plywood wall face */
+  --ply-kb: #211d19;      /* kickboard band */
+  --bolt: #4b443b;        /* unlit hold */
+  --danger: #ff7a6b;
+  --c1: #00ff00;          /* stance colour (set from settings) */
+  --c2: #ff00ff;          /* new-hold colour (set from settings) */
+  --c2-ink: #14060f;      /* text on --c2, set by luminance */
+  --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.45; }
+* { box-sizing: border-box; }
+button, select, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+
+.app {
+  min-height: 100%;
+  display: grid; gap: 14px;
+  grid-template-rows: auto auto 1fr;
+  padding-block: 12px 20px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  max-width: 1100px; margin: 0 auto;
+}
+header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.brand h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 1.7rem; letter-spacing: .02em; text-transform: uppercase; line-height: 1; }
+.brand small { color: var(--muted); font-size: .8rem; letter-spacing: .04em; }
+
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--panel); }
+.seg button { border: 0; background: transparent; padding: 6px 14px; border-radius: 999px; cursor: pointer; color: var(--muted); font-weight: 500; }
+.seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+
+.wallwrap { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+#wall { display: block; width: 100%; max-width: min(100%, 560px); max-height: 54vh; aspect-ratio: 152 / 162; height: auto; }
+.wallcap { font-family: var(--font-mono); font-size: .72rem; color: var(--muted); text-align: center; }
+
+.controls { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+.move { display: grid; gap: 4px; }
+.move .eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+.move .limb { font-family: var(--font-display); font-weight: 700; font-size: clamp(2.2rem, 9vw, 3.1rem); line-height: 1; text-transform: uppercase; letter-spacing: .01em; color: var(--c2); text-wrap: balance; }
+.move .limb.idle { color: var(--c1); }
+.move .hint { color: var(--muted); font-size: .92rem; min-height: 1.4em; }
+.move .hint b { color: var(--fg); font-weight: 600; font-variant-numeric: tabular-nums; }
+.move.stuck .limb { color: var(--danger); }
+
+.next { width: 100%; border: 0; border-radius: 16px; padding: 22px 16px; cursor: pointer; background: var(--c2); color: var(--c2-ink);
+  font-family: var(--font-display); font-weight: 700; font-size: 2rem; letter-spacing: .06em; text-transform: uppercase; touch-action: manipulation;
+  box-shadow: 0 0 0 0 transparent; transition: transform .08s ease, box-shadow .2s ease; }
+.next:active { transform: scale(.985); }
+.next:hover { box-shadow: 0 0 28px -6px var(--c2); }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { flex: 1 1 0; min-width: 0; border: 1px solid var(--line); background: transparent; border-radius: 12px; padding: 11px 10px; cursor: pointer; font-weight: 500; white-space: nowrap; }
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:disabled { opacity: .4; cursor: default; }
+
+.conn { display: grid; gap: 10px; }
+.conn .status { display: flex; align-items: center; gap: 8px; font-size: .9rem; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.on { background: var(--c1); box-shadow: 0 0 10px var(--c1); }
+.dot.err { background: var(--danger); }
+.note { color: var(--muted); font-size: .82rem; margin: 0; }
+.note code { font-family: var(--font-mono); font-size: .78rem; color: var(--fg); }
+
+details.card > summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; justify-content: space-between; }
+details.card > summary::after { content: "＋"; color: var(--muted); }
+details.card[open] > summary::after { content: "－"; }
+details.card[open] > summary { margin-bottom: 12px; }
+.field { display: grid; gap: 6px; margin-bottom: 14px; }
+.field:last-child { margin-bottom: 0; }
+.field > span { font-size: .8rem; color: var(--muted); letter-spacing: .04em; }
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.sw { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; }
+.sw[aria-pressed="true"] { border-color: var(--fg); box-shadow: 0 0 0 3px var(--bg) inset; }
+.rangeval { display: flex; align-items: center; gap: 10px; }
+.rangeval input { flex: 1; accent-color: var(--c2); }
+.rangeval output { font-variant-numeric: tabular-nums; min-width: 4.5em; text-align: right; }
+.check { display: flex; gap: 10px; align-items: center; cursor: pointer; }
+.check input { accent-color: var(--c2); width: 18px; height: 18px; }
+select { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+
+.log { font-family: var(--font-mono); font-size: .74rem; color: var(--muted); display: grid; gap: 6px; max-height: 220px; overflow: auto; }
+.log div { overflow-wrap: anywhere; }
+.log b { color: var(--fg); font-weight: 400; }
+.log .bad { color: var(--danger); }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+.pulse { animation: pulse 1.1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } .next { transition: none; } }
+
+@media (min-width: 860px) {
+  .app { grid-template-columns: minmax(0, 1fr) 380px; grid-template-rows: auto 1fr; column-gap: 28px; }
+  header { grid-column: 1 / -1; }
+  #wall { max-height: calc(100vh - 110px); max-width: 100%; }
+  .wallwrap { align-items: flex-start; }
+}
+</style>
+<style>body{margin:0}[hidden]{display:none!important}:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>
+</head>
+<body>
+
+
+<div class="app">
+  <header>
+    <div class="brand"><h1>Kilter Твистер</h1><small>Original 12×12 · кикборд</small></div>
+    <div class="seg" role="group" aria-label="Куда отправлять подсветку">
+      <button id="modeMock" type="button" aria-pressed="true">Мок</button>
+      <button id="modeBle" type="button" aria-pressed="false">Стена</button>
+    </div>
+  </header>
+
+  <div class="wallwrap">
+    <svg id="wall" viewBox="-4 -2 152 162" role="img" aria-label="Схема стены с подсвеченными зацепками"></svg>
+    <div class="wallcap" id="wallcap">мок · ждёт пакет</div>
+  </div>
+
+  <div class="controls">
+    <div class="card move" id="move" aria-live="polite">
+      <div class="eyebrow"><span id="moveLabel">Старт</span><span id="stepNo"></span></div>
+      <div class="limb idle" id="limb">Встаньте на старт</div>
+      <div class="hint" id="hint">Четыре зацепки старта: руки сверху, ноги снизу.</div>
+    </div>
+
+    <button class="next" id="next" type="button">Дальше</button>
+    <div class="row">
+      <button class="btn" id="undo" type="button" disabled>Отменить ход</button>
+      <button class="btn" id="newGame" type="button">Новая игра</button>
+    </div>
+
+    <div class="card conn" id="connCard" hidden>
+      <div class="status"><span class="dot" id="dot"></span><span id="connText">Не подключено</span></div>
+      <div class="row">
+        <button class="btn" id="connect" type="button">Подключить стену</button>
+        <button class="btn" id="clear" type="button" disabled>Погасить</button>
+      </div>
+      <label class="field" for="bleApi"><span>Версия протокола стены</span>
+        <select id="bleApi"><option value="auto">Авто (по имени стены)</option><option value="3">API 3</option><option value="2">API 2</option></select></label>
+      <p class="note" id="connNote">Нужен Chrome на Android или компьютере и страница, открытая по HTTPS. Официальное приложение на время игры закройте: к стене может быть подключён только один телефон.</p>
+    </div>
+
+    <details class="card" id="settings">
+      <summary>Настройки</summary>
+      <div class="field"><span>Цвет 1 — зацепки, на которых стоите</span><div class="swatches" id="sw1"></div></div>
+      <div class="field"><span>Цвет 2 — новая зацепка</span><div class="swatches" id="sw2"></div></div>
+      <div class="field"><span>Рост игрока (масштаб шагов)</span>
+        <div class="rangeval"><input id="height" type="range" min="140" max="205" step="5" value="175"><output id="heightOut">175 см</output></div></div>
+      <label class="check field"><input id="cross" type="checkbox"> Разрешить скрещивать руки и ноги</label>
+      <label class="check field"><input id="boltOnly" type="checkbox"> На стене только болт-оны (без мелких скрю-онов)</label>
+      <div class="field"><span>Версия протокола мока</span>
+        <select id="mockApi"><option value="3">API 3 (новые контроллеры)</option><option value="2">API 2 (старые)</option></select></div>
+    </details>
+
+    <details class="card" id="logCard">
+      <summary>Журнал пакетов</summary>
+      <div class="log" id="log"></div>
+    </details>
+  </div>
+</div>
+
+<script>
+// Aurora (Kilter Board) BLE LED protocol: encoder + streaming decoder.
+// Sources: bazun.me/blog/kiterboard, github.com/1-max-1/fake_kilter_board,
+// github.com/Stevie-Ray/hangtime-grip-connect (aurora.model.ts).
+const Aurora = (() => {
+  const ADVERTISED_SERVICE = "4488b571-7806-4df6-bcff-a2897e4953ff";
+  const UART_SERVICE = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+  const RX_CHARACTERISTIC = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
+  const BODY_MAX = 255;   // max payload bytes per packet
+  const CHUNK = 20;       // BLE write size
+
+  const MARKERS = {
+    2: { middle: 77, first: 78, last: 79, only: 80 },
+    3: { middle: 81, first: 82, last: 83, only: 84 },
+  };
+
+  function checksum(bytes) {
+    let i = 0;
+    for (const b of bytes) i = (i + b) & 255;
+    return ~i & 255;
+  }
+
+  function parseHex(color) {
+    const c = String(color).replace(/^#/, "");
+    if (!/^[0-9a-fA-F]{6}$/.test(c)) throw new Error("Bad color " + color);
+    return [0, 2, 4].map((i) => parseInt(c.slice(i, i + 2), 16));
+  }
+
+  function encodePlacement(position, color, api) {
+    const [r, g, b] = parseHex(color);
+    if (api === 3) {
+      if (!Number.isInteger(position) || position < 0 || position > 0xffff) throw new Error("Bad position " + position);
+      return [position & 255, (position >> 8) & 255, ((r >> 5) << 5) | ((g >> 5) << 2) | (b >> 6)];
+    }
+    if (!Number.isInteger(position) || position < 0 || position > 0x3ff) throw new Error("Bad position " + position);
+    return [position & 255, ((r >> 6) << 6) | ((g >> 6) << 4) | ((b >> 6) << 2) | ((position >> 8) & 3)];
+  }
+
+  // placements: [{position, color:"RRGGBB"}] -> full byte message (array of numbers)
+  function encode(placements, api = 3) {
+    if (api !== 2 && api !== 3) throw new Error("Unsupported API level " + api);
+    const m = MARKERS[api];
+    const per = api === 3 ? 3 : 2;
+    const packets = [];
+    let cur = [m.middle];
+    for (const p of placements) {
+      if (cur.length + per > BODY_MAX) { packets.push(cur); cur = [m.middle]; }
+      cur.push(...encodePlacement(p.position, p.color, api));
+    }
+    packets.push(cur);
+    if (packets.length === 1) packets[0][0] = m.only;
+    else { packets[0][0] = m.first; packets[packets.length - 1][0] = m.last; }
+    const out = [];
+    for (const body of packets) out.push(1, body.length, checksum(body), 2, ...body, 3);
+    return out;
+  }
+
+  function chunks(bytes, size = CHUNK) {
+    const res = [];
+    for (let i = 0; i < bytes.length; i += size) res.push(Uint8Array.from(bytes.slice(i, i + size)));
+    return res;
+  }
+
+  // Expand a 3/3/2 or 2/2/2 color back to RRGGBB (what the LED will roughly show).
+  function decodeColor(byte, api) {
+    const hex = (v) => v.toString(16).padStart(2, "0");
+    if (api === 3) {
+      const r = (byte >> 5) & 7, g = (byte >> 2) & 7, b = byte & 3;
+      return hex(Math.round((r * 255) / 7)) + hex(Math.round((g * 255) / 7)) + hex(Math.round((b * 255) / 3));
+    }
+    const r = (byte >> 6) & 3, g = (byte >> 4) & 3, b = (byte >> 2) & 3;
+    return hex(Math.round((r * 255) / 3)) + hex(Math.round((g * 255) / 3)) + hex(Math.round((b * 255) / 3));
+  }
+
+  // Streaming decoder: feed() any chunks; onMessage(placements, api) fires per complete message.
+  function createDecoder(onMessage, onError = () => {}) {
+    let buf = [];
+    let pending = null; // {api, placements}
+    function handlePacket(body) {
+      const marker = body[0];
+      let api = null, kind = null;
+      for (const lvl of [2, 3]) for (const [k, v] of Object.entries(MARKERS[lvl])) if (v === marker) { api = lvl; kind = k; }
+      if (!api) return onError("Неизвестный маркер пакета " + marker);
+      const per = api === 3 ? 3 : 2;
+      if ((body.length - 1) % per !== 0) return onError("Длина данных не кратна " + per);
+      const placements = [];
+      for (let i = 1; i < body.length; i += per) {
+        if (api === 3) placements.push({ position: body[i] | (body[i + 1] << 8), color: decodeColor(body[i + 2], 3) });
+        else placements.push({ position: body[i] | ((body[i + 1] & 3) << 8), color: decodeColor(body[i + 1], 2) });
+      }
+      if (kind === "only") { pending = null; return onMessage(placements, api); }
+      if (kind === "first") { pending = { api, placements }; return; }
+      if (!pending || pending.api !== api) { pending = null; return onError("Пакет вне сообщения"); }
+      pending.placements.push(...placements);
+      if (kind === "last") { const p = pending; pending = null; onMessage(p.placements, p.api); }
+    }
+    function feed(chunk) {
+      buf.push(...chunk);
+      for (;;) {
+        const start = buf.indexOf(1);
+        if (start < 0) { buf = []; return; }
+        if (start > 0) { onError("Мусор перед пакетом: " + start + " байт"); buf = buf.slice(start); }
+        if (buf.length < 4) return;
+        const len = buf[1];
+        if (buf.length < len + 5) return;
+        const body = buf.slice(4, 4 + len);
+        const ok = buf[3] === 2 && buf[4 + len] === 3 && checksum(body) === buf[2];
+        if (!ok) { onError("Битый пакет (рамка или контрольная сумма)"); buf = buf.slice(1); continue; }
+        buf = buf.slice(len + 5);
+        handlePacket(body);
+      }
+    }
+    return { feed, reset() { buf = []; pending = null; } };
+  }
+
+  function apiFromName(name) {
+    const m = /@(\d+)$/.exec(name || "");
+    return m && Number(m[1]) === 3 ? 3 : 2;
+  }
+
+  return { ADVERTISED_SERVICE, UART_SERVICE, RX_CHARACTERISTIC, checksum, encode, chunks, createDecoder, decodeColor, apiFromName };
+})();
+if (typeof module !== "undefined") module.exports = Aurora;
+
+</script>
+<script>
+// Twister game logic for an LED climbing wall. Pure: no DOM, no Bluetooth.
+// Wall coordinates are inches (Kilter Original 12x12: x 0..144, y 0..156, y up).
+const Twister = (() => {
+  const LIMBS = ["LH", "RH", "LF", "RF"];
+  const NAMES = { LH: "Левая рука", RH: "Правая рука", LF: "Левая нога", RF: "Правая нога" };
+  const isHand = (l) => l === "LH" || l === "RH";
+  const other = { LH: "RH", RH: "LH", LF: "RF", RF: "LF" };
+
+  // holds: [{id, x, y, led, kickboard}]
+  function create(holds, options = {}, rng = Math.random) {
+    const opt = { heightCm: 175, allowCross: false, ...options };
+    let pos = null;       // limb -> hold
+    let pending = null;   // {limb, hold}
+    let lastLimb = null;
+    let history = [];
+    let step = 0;
+
+    const k = () => opt.heightCm / 175;           // body scale
+    const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+    const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+
+    function nearest(tx, ty, used, filter = () => true) {
+      const c = holds.filter((h) => !used.has(h.id) && filter(h))
+        .sort((a, b) => Math.hypot(a.x - tx, a.y - ty) - Math.hypot(b.x - tx, b.y - ty));
+      return pick(c.slice(0, 3));
+    }
+
+    function start() {
+      const s = k(), used = new Set();
+      const cx = 72 + (rng() - 0.5) * 24;
+      const plan = { LF: [cx - 7, 8], RF: [cx + 7, 8], LH: [cx - 11, 8 + 52 * s], RH: [cx + 11, 8 + 52 * s] };
+      pos = {};
+      for (const l of ["LF", "RF", "LH", "RH"]) {
+        const h = nearest(plan[l][0], plan[l][1], used, (h) => (isHand(l) ? h.y >= 24 : true));
+        pos[l] = h; used.add(h.id);
+      }
+      pending = null; lastLimb = null; history = []; step = 0;
+      return snapshot();
+    }
+
+    // Is hold c an acceptable new place for limb, given the other limbs stay put?
+    function fits(limb, c, reach) {
+      const s = k();
+      const from = pos[limb];
+      const d = dist(from, c);
+      if (d < 6 || d > reach) return false;
+      const np = { ...pos, [limb]: c };
+      const handsLow = Math.min(np.LH.y, np.RH.y), handsHigh = Math.max(np.LH.y, np.RH.y);
+      const feetLow = Math.min(np.LF.y, np.RF.y), feetHigh = Math.max(np.LF.y, np.RF.y);
+      if (np.LH.y < 24 || np.RH.y < 24) return false;            // no hands on kickboard
+      if (handsLow - feetHigh < 18 * s) return false;              // hands clearly above feet
+      if (handsHigh - feetLow > 80 * s) return false;              // body can't stretch further
+      if (Math.abs(np.LH.x - np.RH.x) > 64 * s || Math.abs(np.LH.y - np.RH.y) > 36 * s) return false;
+      if (Math.abs(np.LF.x - np.RF.x) > 54 * s || Math.abs(np.LF.y - np.RF.y) > 34 * s) return false;
+      if (!opt.allowCross && (np.LH.x > np.RH.x + 6 || np.LF.x > np.RF.x + 6)) return false;
+      const midHands = (np.LH.x + np.RH.x) / 2, midFeet = (np.LF.x + np.RF.x) / 2;
+      if (Math.abs(midHands - midFeet) > 34 * s) return false;     // don't lean too far sideways
+      return true;
+    }
+
+    function candidates(limb, reach, exclude) {
+      const used = new Set(LIMBS.map((l) => pos[l].id));
+      if (exclude) used.add(exclude.id);                          // the just-vacated hold must go dark
+      return holds.filter((h) => !used.has(h.id) && fits(limb, h, reach));
+    }
+
+    function next() {
+      history.push(JSON.stringify({ pos, pending, lastLimb, step }));
+      if (history.length > 200) history.shift();
+      let freed = null;
+      if (pending) { freed = pos[pending.limb]; pos = { ...pos, [pending.limb]: pending.hold }; pending = null; }
+      const baseReach = 30 * k();
+      const order = LIMBS.filter((l) => l !== lastLimb).sort(() => rng() - 0.5);
+      if (lastLimb) order.push(lastLimb);                         // same limb twice only as a fallback
+      for (const reach of [baseReach, baseReach * 1.25]) {
+        for (const limb of order) {
+          const c = candidates(limb, reach, freed);
+          if (c.length) {
+            pending = { limb, hold: pick(c) }; lastLimb = limb; step++;
+            return { ...snapshot(), freed };
+          }
+        }
+      }
+      return { ...snapshot(), freed, stuck: true };
+    }
+
+    function undo() {
+      if (!history.length) return snapshot();
+      const s = JSON.parse(history.pop());
+      pos = s.pos; pending = s.pending; lastLimb = s.lastLimb; step = s.step;
+      return snapshot();
+    }
+
+    // What the wall should show now: [{hold, role:"stance"|"new", limb}]
+    function lit() {
+      const out = LIMBS.map((l) => ({ hold: pos[l], role: "stance", limb: l }));
+      if (pending) out.push({ hold: pending.hold, role: "new", limb: pending.limb });
+      return out;
+    }
+
+    function snapshot() {
+      return { pos: { ...pos }, pending: pending && { ...pending }, step, lit: lit(), canUndo: history.length > 0 };
+    }
+
+    function setOptions(o) { Object.assign(opt, o); }
+
+    return { start, next, undo, snapshot, setOptions, get options() { return { ...opt }; } };
+  }
+
+  return { create, LIMBS, NAMES };
+})();
+if (typeof module !== "undefined") module.exports = Twister;
+
+</script>
+<script>
+(() => {
+  const RAW = [[1073,136,8,1,1,1],[1074,128,8,3,1,1],[1075,120,8,5,1,1],[1076,112,8,7,1,1],[1077,104,8,9,1,1],[1078,96,8,11,1,1],[1079,88,8,13,1,1],[1080,80,8,15,1,1],[1081,72,8,17,1,1],[1082,64,8,19,1,1],[1083,56,8,21,1,1],[1084,48,8,23,1,1],[1085,40,8,25,1,1],[1086,32,8,27,1,1],[1087,24,8,29,1,1],[1088,16,8,31,1,1],[1089,8,8,34,1,1],[1090,8,16,36,1,0],[1091,16,16,94,1,0],[1092,24,16,95,1,0],[1093,32,16,145,1,0],[1094,40,16,146,1,0],[1095,48,16,196,1,0],[1096,56,16,197,1,0],[1097,64,16,247,1,0],[1098,72,16,248,1,0],[1099,80,16,298,1,0],[1100,88,16,299,1,0],[1101,96,16,349,1,0],[1102,104,16,350,1,0],[1103,112,16,400,1,0],[1104,120,16,401,1,0],[1105,128,16,451,1,0],[1106,136,16,452,1,0],[1107,8,24,38,1,0],[1108,16,24,92,1,0],[1109,24,24,96,1,0],[1110,32,24,143,1,0],[1111,40,24,147,1,0],[1112,48,24,194,1,0],[1113,56,24,198,1,0],[1114,64,24,245,1,0],[1115,72,24,249,1,0],[1116,80,24,296,1,0],[1117,88,24,300,1,0],[1118,96,24,347,1,0],[1119,104,24,351,1,0],[1120,112,24,398,1,0],[1121,120,24,402,1,0],[1122,128,24,449,1,0],[1123,136,24,453,1,0],[1124,8,32,40,1,0],[1125,16,32,91,1,0],[1126,24,32,98,1,0],[1127,32,32,142,1,0],[1128,40,32,149,1,0],[1129,48,32,193,1,0],[1130,56,32,200,1,0],[1131,64,32,244,1,0],[1132,72,32,251,1,0],[1133,80,32,295,1,0],[1134,88,32,302,1,0],[1135,96,32,346,1,0],[1136,104,32,353,1,0],[1137,112,32,397,1,0],[1138,120,32,404,1,0],[1139,128,32,448,1,0],[1140,136,32,455,1,0],[1141,8,40,42,1,0],[1142,16,40,89,1,0],[1143,24,40,99,1,0],[1144,32,40,140,1,0],[1145,40,40,150,1,0],[1146,48,40,191,1,0],[1147,56,40,201,1,0],[1148,64,40,242,1,0],[1149,72,40,252,1,0],[1150,80,40,293,1,0],[1151,88,40,303,1,0],[1152,96,40,344,1,0],[1153,104,40,354,1,0],[1154,112,40,395,1,0],[1155,120,40,405,1,0],[1156,128,40,446,1,0],[1157,136,40,456,1,0],[1158,8,48,44,1,0],[1159,16,48,88,1,0],[1160,24,48,101,1,0],[1161,32,48,139,1,0],[1162,40,48,152,1,0],[1163,48,48,190,1,0],[1164,56,48,203,1,0],[1165,64,48,241,1,0],[1166,72,48,254,1,0],[1167,80,48,292,1,0],[1168,88,48,305,1,0],[1169,96,48,343,1,0],[1170,104,48,356,1,0],[1171,112,48,394,1,0],[1172,120,48,407,1,0],[1173,128,48,445,1,0],[1174,136,48,458,1,0],[1175,8,56,46,1,0],[1176,16,56,86,1,0],[1177,24,56,102,1,0],[1178,32,56,137,1,0],[1179,40,56,153,1,0],[1180,48,56,188,1,0],[1181,56,56,204,1,0],[1182,64,56,239,1,0],[1183,72,56,255,1,0],[1184,80,56,290,1,0],[1185,88,56,306,1,0],[1186,96,56,341,1,0],[1187,104,56,357,1,0],[1188,112,56,392,1,0],[1189,120,56,408,1,0],[1190,128,56,443,1,0],[1191,136,56,459,1,0],[1192,8,64,48,1,0],[1193,16,64,85,1,0],[1194,24,64,104,1,0],[1195,32,64,136,1,0],[1196,40,64,155,1,0],[1197,48,64,187,1,0],[1198,56,64,206,1,0],[1199,64,64,238,1,0],[1200,72,64,257,1,0],[1201,80,64,289,1,0],[1202,88,64,308,1,0],[1203,96,64,340,1,0],[1204,104,64,359,1,0],[1205,112,64,391,1,0],[1206,120,64,410,1,0],[1207,128,64,442,1,0],[1208,136,64,461,1,0],[1209,8,72,50,1,0],[1210,16,72,83,1,0],[1211,24,72,105,1,0],[1212,32,72,134,1,0],[1213,40,72,156,1,0],[1214,48,72,185,1,0],[1215,56,72,207,1,0],[1216,64,72,236,1,0],[1217,72,72,258,1,0],[1218,80,72,287,1,0],[1219,88,72,309,1,0],[1220,96,72,338,1,0],[1221,104,72,360,1,0],[1222,112,72,389,1,0],[1223,120,72,411,1,0],[1224,128,72,440,1,0],[1225,136,72,462,1,0],[1226,8,80,52,1,0],[1227,16,80,82,1,0],[1228,24,80,107,1,0],[1229,32,80,133,1,0],[1230,40,80,158,1,0],[1231,48,80,184,1,0],[1232,56,80,209,1,0],[1233,64,80,235,1,0],[1234,72,80,260,1,0],[1235,80,80,286,1,0],[1236,88,80,311,1,0],[1237,96,80,337,1,0],[1238,104,80,362,1,0],[1239,112,80,388,1,0],[1240,120,80,413,1,0],[1241,128,80,439,1,0],[1242,136,80,464,1,0],[1243,8,88,54,1,0],[1244,16,88,80,1,0],[1245,24,88,108,1,0],[1246,32,88,131,1,0],[1247,40,88,159,1,0],[1248,48,88,182,1,0],[1249,56,88,210,1,0],[1250,64,88,233,1,0],[1251,72,88,261,1,0],[1252,80,88,284,1,0],[1253,88,88,312,1,0],[1254,96,88,335,1,0],[1255,104,88,363,1,0],[1256,112,88,386,1,0],[1257,120,88,414,1,0],[1258,128,88,437,1,0],[1259,136,88,465,1,0],[1260,8,96,56,1,0],[1261,16,96,79,1,0],[1262,24,96,110,1,0],[1263,32,96,130,1,0],[1264,40,96,161,1,0],[1265,48,96,181,1,0],[1266,56,96,212,1,0],[1267,64,96,232,1,0],[1268,72,96,263,1,0],[1269,80,96,283,1,0],[1270,88,96,314,1,0],[1271,96,96,334,1,0],[1272,104,96,365,1,0],[1273,112,96,385,1,0],[1274,120,96,416,1,0],[1275,128,96,436,1,0],[1276,136,96,467,1,0],[1277,8,104,58,1,0],[1278,16,104,77,1,0],[1279,24,104,111,1,0],[1280,32,104,128,1,0],[1281,40,104,162,1,0],[1282,48,104,179,1,0],[1283,56,104,213,1,0],[1284,64,104,230,1,0],[1285,72,104,264,1,0],[1286,80,104,281,1,0],[1287,88,104,315,1,0],[1288,96,104,332,1,0],[1289,104,104,366,1,0],[1290,112,104,383,1,0],[1291,120,104,417,1,0],[1292,128,104,434,1,0],[1293,136,104,468,1,0],[1294,8,112,60,1,0],[1295,16,112,76,1,0],[1296,24,112,113,1,0],[1297,32,112,127,1,0],[1298,40,112,164,1,0],[1299,48,112,178,1,0],[1300,56,112,215,1,0],[1301,64,112,229,1,0],[1302,72,112,266,1,0],[1303,80,112,280,1,0],[1304,88,112,317,1,0],[1305,96,112,331,1,0],[1306,104,112,368,1,0],[1307,112,112,382,1,0],[1308,120,112,419,1,0],[1309,128,112,433,1,0],[1310,136,112,470,1,0],[1311,8,120,62,1,0],[1312,16,120,74,1,0],[1313,24,120,114,1,0],[1314,32,120,125,1,0],[1315,40,120,165,1,0],[1316,48,120,176,1,0],[1317,56,120,216,1,0],[1318,64,120,227,1,0],[1319,72,120,267,1,0],[1320,80,120,278,1,0],[1321,88,120,318,1,0],[1322,96,120,329,1,0],[1323,104,120,369,1,0],[1324,112,120,380,1,0],[1325,120,120,420,1,0],[1326,128,120,431,1,0],[1327,136,120,471,1,0],[1328,8,128,64,1,0],[1329,16,128,73,1,0],[1330,24,128,116,1,0],[1331,32,128,124,1,0],[1332,40,128,167,1,0],[1333,48,128,175,1,0],[1334,56,128,218,1,0],[1335,64,128,226,1,0],[1336,72,128,269,1,0],[1337,80,128,277,1,0],[1338,88,128,320,1,0],[1339,96,128,328,1,0],[1340,104,128,371,1,0],[1341,112,128,379,1,0],[1342,120,128,422,1,0],[1343,128,128,430,1,0],[1344,136,128,473,1,0],[1345,8,136,66,1,0],[1346,16,136,71,1,0],[1347,24,136,117,1,0],[1348,32,136,122,1,0],[1349,40,136,168,1,0],[1350,48,136,173,1,0],[1351,56,136,219,1,0],[1352,64,136,224,1,0],[1353,72,136,270,1,0],[1354,80,136,275,1,0],[1355,88,136,321,1,0],[1356,96,136,326,1,0],[1357,104,136,372,1,0],[1358,112,136,377,1,0],[1359,120,136,423,1,0],[1360,128,136,428,1,0],[1361,136,136,474,1,0],[1362,8,144,67,1,0],[1363,16,144,70,1,0],[1364,24,144,118,1,0],[1365,32,144,121,1,0],[1366,40,144,169,1,0],[1367,48,144,172,1,0],[1368,56,144,220,1,0],[1369,64,144,223,1,0],[1370,72,144,271,1,0],[1371,80,144,274,1,0],[1372,88,144,322,1,0],[1373,96,144,325,1,0],[1374,104,144,373,1,0],[1375,112,144,376,1,0],[1376,120,144,424,1,0],[1377,128,144,427,1,0],[1378,136,144,475,1,0],[1379,8,152,68,1,0],[1380,16,152,69,1,0],[1381,24,152,119,1,0],[1382,32,152,120,1,0],[1383,40,152,170,1,0],[1384,48,152,171,1,0],[1385,56,152,221,1,0],[1386,64,152,222,1,0],[1387,72,152,272,1,0],[1388,80,152,273,1,0],[1389,88,152,323,1,0],[1390,96,152,324,1,0],[1391,104,152,374,1,0],[1392,112,152,375,1,0],[1393,120,152,425,1,0],[1394,128,152,426,1,0],[1395,136,152,476,1,0],[1447,140,4,0,20,1],[1448,132,4,2,20,1],[1449,124,4,4,20,1],[1450,116,4,6,20,1],[1451,108,4,8,20,1],[1452,100,4,10,20,1],[1453,92,4,12,20,1],[1454,84,4,14,20,1],[1455,76,4,16,20,1],[1456,68,4,18,20,1],[1457,60,4,20,20,1],[1458,52,4,22,20,1],[1459,44,4,24,20,1],[1460,36,4,26,20,1],[1461,28,4,28,20,1],[1462,20,4,30,20,1],[1463,12,4,32,20,1],[1464,4,4,33,20,1],[1465,4,20,37,20,0],[1466,20,20,93,20,0],[1467,36,20,144,20,0],[1468,52,20,195,20,0],[1469,68,20,246,20,0],[1470,84,20,297,20,0],[1471,100,20,348,20,0],[1472,116,20,399,20,0],[1473,132,20,450,20,0],[1474,12,28,39,20,0],[1475,28,28,97,20,0],[1476,44,28,148,20,0],[1477,60,28,199,20,0],[1478,76,28,250,20,0],[1479,92,28,301,20,0],[1480,108,28,352,20,0],[1481,124,28,403,20,0],[1482,140,28,454,20,0],[1483,4,36,41,20,0],[1484,20,36,90,20,0],[1485,36,36,141,20,0],[1486,52,36,192,20,0],[1487,68,36,243,20,0],[1488,84,36,294,20,0],[1489,100,36,345,20,0],[1490,116,36,396,20,0],[1491,132,36,447,20,0],[1492,12,44,43,20,0],[1493,28,44,100,20,0],[1494,44,44,151,20,0],[1495,60,44,202,20,0],[1496,76,44,253,20,0],[1497,92,44,304,20,0],[1498,108,44,355,20,0],[1499,124,44,406,20,0],[1500,140,44,457,20,0],[1501,4,52,45,20,0],[1502,20,52,87,20,0],[1503,36,52,138,20,0],[1504,52,52,189,20,0],[1505,68,52,240,20,0],[1506,84,52,291,20,0],[1507,100,52,342,20,0],[1508,116,52,393,20,0],[1509,132,52,444,20,0],[1510,12,60,47,20,0],[1511,28,60,103,20,0],[1512,44,60,154,20,0],[1513,60,60,205,20,0],[1514,76,60,256,20,0],[1515,92,60,307,20,0],[1516,108,60,358,20,0],[1517,124,60,409,20,0],[1518,140,60,460,20,0],[1519,4,68,49,20,0],[1520,20,68,84,20,0],[1521,36,68,135,20,0],[1522,52,68,186,20,0],[1523,68,68,237,20,0],[1524,84,68,288,20,0],[1525,100,68,339,20,0],[1526,116,68,390,20,0],[1527,132,68,441,20,0],[1528,12,76,51,20,0],[1529,28,76,106,20,0],[1530,44,76,157,20,0],[1531,60,76,208,20,0],[1532,76,76,259,20,0],[1533,92,76,310,20,0],[1534,108,76,361,20,0],[1535,124,76,412,20,0],[1536,140,76,463,20,0],[1537,4,84,53,20,0],[1538,20,84,81,20,0],[1539,36,84,132,20,0],[1540,52,84,183,20,0],[1541,68,84,234,20,0],[1542,84,84,285,20,0],[1543,100,84,336,20,0],[1544,116,84,387,20,0],[1545,132,84,438,20,0],[1546,12,92,55,20,0],[1547,28,92,109,20,0],[1548,44,92,160,20,0],[1549,60,92,211,20,0],[1550,76,92,262,20,0],[1551,92,92,313,20,0],[1552,108,92,364,20,0],[1553,124,92,415,20,0],[1554,140,92,466,20,0],[1555,4,100,57,20,0],[1556,20,100,78,20,0],[1557,36,100,129,20,0],[1558,52,100,180,20,0],[1559,68,100,231,20,0],[1560,84,100,282,20,0],[1561,100,100,333,20,0],[1562,116,100,384,20,0],[1563,132,100,435,20,0],[1564,12,108,59,20,0],[1565,28,108,112,20,0],[1566,44,108,163,20,0],[1567,60,108,214,20,0],[1568,76,108,265,20,0],[1569,92,108,316,20,0],[1570,108,108,367,20,0],[1571,124,108,418,20,0],[1572,140,108,469,20,0],[1573,4,116,61,20,0],[1574,20,116,75,20,0],[1575,36,116,126,20,0],[1576,52,116,177,20,0],[1577,68,116,228,20,0],[1578,84,116,279,20,0],[1579,100,116,330,20,0],[1580,116,116,381,20,0],[1581,132,116,432,20,0],[1582,12,124,63,20,0],[1583,28,124,115,20,0],[1584,44,124,166,20,0],[1585,60,124,217,20,0],[1586,76,124,268,20,0],[1587,92,124,319,20,0],[1588,108,124,370,20,0],[1589,124,124,421,20,0],[1590,140,124,472,20,0],[1591,4,132,65,20,0],[1592,20,132,72,20,0],[1593,36,132,123,20,0],[1594,52,132,174,20,0],[1595,68,132,225,20,0],[1596,84,132,276,20,0],[1597,100,132,327,20,0],[1598,116,132,378,20,0],[1599,132,132,429,20,0]];
+  const holds = RAW.map(([id, x, y, led, set, kb]) => ({ id, x, y, led, set, kickboard: !!kb }));
+  const byLed = new Map(holds.map((h) => [h.led, h]));
+  const $ = (id) => document.getElementById(id);
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const LIMB_SHORT = { LH: "ЛР", RH: "ПР", LF: "ЛН", RF: "ПН" };
+  // Colours that survive the 3/3/2-bit LED encoding exactly (orange is the one approximation).
+  const PALETTE = [
+    ["00FF00", "Зелёный"], ["00FFFF", "Голубой"], ["FF00FF", "Пурпурный"], ["FFFF00", "Жёлтый"],
+    ["FF0000", "Красный"], ["0000FF", "Синий"], ["FF8000", "Оранжевый"], ["FFFFFF", "Белый"],
+  ];
+
+  // ---------- settings ----------
+  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false };
+  let settings = { ...defaults };
+  try { Object.assign(settings, JSON.parse(localStorage.getItem("kilterTwister") || "{}")); } catch (e) {}
+  const save = () => { try { localStorage.setItem("kilterTwister", JSON.stringify(settings)); } catch (e) {} };
+
+  function applyColors() {
+    const r = document.documentElement.style;
+    r.setProperty("--c1", "#" + settings.c1);
+    r.setProperty("--c2", "#" + settings.c2);
+    const [R, G, B] = [0, 2, 4].map((i) => parseInt(settings.c2.slice(i, i + 2), 16) / 255);
+    const lum = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+    r.setProperty("--c2-ink", lum > 0.35 ? "#12100e" : "#ffffff");
+  }
+
+  function buildSwatches(el, key, otherKey) {
+    el.innerHTML = "";
+    for (const [hex, name] of PALETTE) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "sw"; b.style.background = "#" + hex;
+      b.title = name; b.setAttribute("aria-label", name);
+      b.setAttribute("aria-pressed", String(settings[key] === hex));
+      b.onclick = () => {
+        if (settings[otherKey] === hex) settings[otherKey] = settings[key]; // swap instead of making both equal
+        settings[key] = hex; save(); applyColors();
+        buildSwatches($("sw1"), "c1", "c2"); buildSwatches($("sw2"), "c2", "c1");
+        push();
+      };
+      el.appendChild(b);
+    }
+  }
+
+  // ---------- wall drawing ----------
+  const wall = $("wall");
+  const Y = (y) => 156 - y;
+  const holdEls = new Map();
+  let litLayer;
+  (function drawWall() {
+    const mk = (tag, attrs, parent = wall) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; };
+    const defs = mk("defs", {});
+    const f = mk("filter", { id: "glow", x: "-100%", y: "-100%", width: "300%", height: "300%" }, defs);
+    mk("feGaussianBlur", { stdDeviation: "1.6", result: "b" }, f);
+    const m = mk("feMerge", {}, f); mk("feMergeNode", { in: "b" }, m); mk("feMergeNode", { in: "SourceGraphic" }, m);
+    mk("rect", { x: -2, y: -1, width: 148, height: 160, rx: 2, fill: "var(--ply)" });
+    mk("rect", { x: -2, y: Y(12), width: 148, height: 13, fill: "var(--ply-kb)" });
+    mk("line", { x1: -2, x2: 146, y1: Y(12), y2: Y(12), stroke: "var(--line)", "stroke-width": 0.4 });
+    const base = mk("g", {});
+    for (const h of holds) holdEls.set(h.led, mk("circle", { cx: h.x, cy: Y(h.y), r: h.set === 1 ? 1.5 : 1.1, fill: "var(--bolt)" }, base));
+    litLayer = mk("g", {});
+  })();
+
+  // lit: [{hold, color:"#rrggbb", label, isNew}], arrow: {from, to} | null
+  function renderWall(lit, arrow) {
+    litLayer.innerHTML = "";
+    const mk = (tag, attrs) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); litLayer.appendChild(e); return e; };
+    if (arrow) mk("line", { x1: arrow.from.x, y1: Y(arrow.from.y), x2: arrow.to.x, y2: Y(arrow.to.y), stroke: "var(--muted)", "stroke-width": 0.5, "stroke-dasharray": "1.4 1.2" });
+    for (const l of lit) {
+      const g = mk("g", { class: l.isNew ? "pulse" : "" });
+      g.appendChild(Object.assign(document.createElementNS(SVGNS, "circle"), {}));
+      const c = g.lastChild;
+      c.setAttribute("cx", l.hold.x); c.setAttribute("cy", Y(l.hold.y)); c.setAttribute("r", 3.1);
+      c.setAttribute("fill", "none"); c.setAttribute("stroke", l.color); c.setAttribute("stroke-width", 1.3); c.setAttribute("filter", "url(#glow)");
+      const d = document.createElementNS(SVGNS, "circle");
+      d.setAttribute("cx", l.hold.x); d.setAttribute("cy", Y(l.hold.y)); d.setAttribute("r", 1.3); d.setAttribute("fill", l.color); g.appendChild(d);
+      if (l.label) {
+        const tx = document.createElementNS(SVGNS, "text");
+        tx.setAttribute("x", l.hold.x + 4.2); tx.setAttribute("y", Y(l.hold.y) + 1.1);
+        tx.setAttribute("fill", "var(--fg)"); tx.setAttribute("font-size", 3.2); tx.setAttribute("font-family", "IBM Plex Sans, sans-serif"); tx.setAttribute("font-weight", 600);
+        tx.textContent = l.label; g.appendChild(tx);
+      }
+    }
+  }
+
+  // ---------- packet log ----------
+  const logEl = $("log");
+  function log(html, bad) {
+    const d = document.createElement("div"); if (bad) d.className = "bad";
+    d.innerHTML = `<b>${new Date().toLocaleTimeString("ru-RU")}</b> ${html}`;
+    logEl.prepend(d); while (logEl.childElementCount > 40) logEl.lastChild.remove();
+  }
+  const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join(" ");
+
+  // ---------- mock wall: decodes the same bytes the real wall would get ----------
+  let currentLabels = new Map(); // led -> {label, isNew}
+  let currentArrow = null;
+  const decoder = Aurora.createDecoder((placements, api) => {
+    const lit = [];
+    for (const p of placements) {
+      const h = byLed.get(p.position);
+      if (!h) { log(`LED ${p.position} нет на этой стене`, true); continue; }
+      const info = currentLabels.get(p.position) || {};
+      lit.push({ hold: h, color: "#" + p.color, label: info.label, isNew: info.isNew });
+    }
+    renderWall(lit, currentArrow);
+    $("wallcap").textContent = `${mode === "ble" ? "превью отправленного" : "мок"} · API ${api} · горит ${lit.length} · внизу кикборд`;
+  }, (err) => log("Мок: " + err, true));
+
+  // ---------- Bluetooth wall ----------
+  const ble = { device: null, char: null, nameApi: 2, sending: false, queued: null,
+    get api() { return settings.bleApi === "auto" ? this.nameApi : Number(settings.bleApi); } };
+  const apiLabel = () => `API ${ble.api}` + (settings.bleApi === "auto" ? " (по имени)" : " (вручную)");
+  function setConn(state, text) {
+    $("dot").className = "dot" + (state === "on" ? " on" : state === "err" ? " err" : "");
+    $("connText").textContent = text;
+    $("connect").textContent = ble.char ? "Отключить" : "Подключить стену";
+    $("clear").disabled = !ble.char;
+  }
+  async function bleConnect() {
+    if (ble.char) { try { ble.device.gatt.disconnect(); } catch (e) {} return; }
+    if (!navigator.bluetooth) {
+      setConn("err", "Bluetooth недоступен в этом браузере");
+      $("connNote").innerHTML = "Откройте страницу в <b>Chrome</b> на Android или компьютере по адресу <code>https://…</code>. Во встроенном просмотре и в iPhone Web Bluetooth не работает; режим «Мок» работает везде.";
+      return;
+    }
+    try {
+      setConn("", "Выберите стену в списке…");
+      const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [Aurora.ADVERTISED_SERVICE] }], optionalServices: [Aurora.UART_SERVICE] });
+      device.addEventListener("gattserverdisconnected", () => { ble.char = null; setConn("", "Стена отключилась"); log("BLE: отключено"); });
+      setConn("", "Подключаюсь к " + (device.name || "стене") + "…");
+      const server = await device.gatt.connect();
+      const svc = await server.getPrimaryService(Aurora.UART_SERVICE);
+      ble.char = await svc.getCharacteristic(Aurora.RX_CHARACTERISTIC);
+      ble.device = device; ble.nameApi = Aurora.apiFromName(device.name);
+      setConn("on", `${device.name || "Стена"} · ${apiLabel()}`);
+      log(`BLE: подключено к «${device.name || "?"}», протокол ${apiLabel()}`);
+      push();
+    } catch (e) {
+      ble.char = null;
+      if (e && e.name === "NotFoundError") setConn("", "Выбор отменён");
+      else if (e && e.name === "SecurityError") {
+        setConn("err", "Браузер запретил Bluetooth на этой странице");
+        $("connNote").innerHTML = "Здесь Bluetooth заблокирован. Откройте файл страницы напрямую по <code>https://</code> (например, с GitHub Pages) в Chrome.";
+      } else setConn("err", "Ошибка: " + (e && e.message ? e.message : e));
+      log("BLE: " + (e && e.message ? e.message : e), true);
+    }
+  }
+  async function bleSend(bytes) {
+    ble.queued = bytes;                       // latest frame wins; skip stale ones
+    if (ble.sending) return;
+    ble.sending = true;
+    try {
+      while (ble.queued && ble.char) {
+        const b = ble.queued; ble.queued = null;
+        const t0 = performance.now();
+        for (const c of Aurora.chunks(b)) {
+          if (ble.char.properties.writeWithoutResponse && ble.char.writeValueWithoutResponse) await ble.char.writeValueWithoutResponse(c);
+          else await ble.char.writeValue(c);
+        }
+        log(`BLE: ушло ${b.length} байт за ${Math.round(performance.now() - t0)} мс`);
+      }
+    } catch (e) { setConn("err", "Не удалось отправить: " + e.message); log("BLE: " + e.message, true); }
+    finally { ble.sending = false; }
+  }
+
+  // ---------- game ----------
+  let mode = "mock";
+  const playable = () => (settings.boltOnly ? holds.filter((h) => h.set === 1) : holds);
+  let game = Twister.create(playable(), { heightCm: settings.heightCm, allowCross: settings.allowCross });
+  let state = game.start();
+  let prevPos = null;
+
+  function api() { return mode === "ble" && ble.char ? ble.api : settings.mockApi; }
+
+  function push() {
+    currentLabels = new Map();
+    for (const l of state.lit) currentLabels.set(l.hold.led, { label: l.role === "new" ? LIMB_SHORT[l.limb] + "?" : LIMB_SHORT[l.limb], isNew: l.role === "new" });
+    currentArrow = state.pending ? { from: state.pos[state.pending.limb], to: state.pending.hold } : null;
+    const placements = state.lit.map((l) => ({ position: l.hold.led, color: l.role === "new" ? settings.c2 : settings.c1 }));
+    const bytes = Aurora.encode(placements, api());
+    log(`→ ${placements.length} зацепок, ${bytes.length} байт, ${Math.ceil(bytes.length / 20)} BLE-кусок: <span>${hex(bytes)}</span>`);
+    decoder.reset();
+    for (const c of Aurora.chunks(bytes)) decoder.feed(c);   // preview is built from the bytes themselves
+    if (mode === "ble" && ble.char) bleSend(bytes);
+    renderMove();
+  }
+
+  const ARROWS = ["→", "↗", "↑", "↖", "←", "↙", "↓", "↘"];
+  function renderMove() {
+    const box = $("move"); box.classList.toggle("stuck", !!state.stuck);
+    $("undo").disabled = !state.canUndo;
+    $("stepNo").textContent = state.step ? `ход ${state.step}` : "";
+    if (state.stuck) {
+      $("moveLabel").textContent = "Тупик";
+      $("limb").className = "limb"; $("limb").textContent = "Некуда ходить";
+      $("hint").textContent = "Нажмите «Отменить ход» или начните новую игру.";
+      return;
+    }
+    if (!state.pending) {
+      $("moveLabel").textContent = "Старт";
+      $("limb").className = "limb idle"; $("limb").textContent = "Встаньте на старт";
+      $("hint").textContent = "Четыре зацепки цвета 1: руки сверху, ноги снизу. Затем «Дальше».";
+      return;
+    }
+    const { limb, hold } = state.pending, from = state.pos[limb];
+    const dx = hold.x - from.x, dy = hold.y - from.y;
+    const dir = ARROWS[(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
+    const cm = Math.round(Math.hypot(dx, dy) * 2.54);
+    $("moveLabel").textContent = "Переставьте";
+    $("limb").className = "limb"; $("limb").textContent = Twister.NAMES[limb];
+    $("hint").innerHTML = `${dir} на <b>${cm} см</b> · на зацепку цвета 2`;
+  }
+
+  function next() { state = game.next(); push(); wake(); }
+  function undo() { state = game.undo(); push(); }
+  function restart() { game.setOptions({ heightCm: settings.heightCm, allowCross: settings.allowCross }); state = game.start(); push(); }
+
+  let lock = null;
+  async function wake() { try { if (!lock && navigator.wakeLock) { lock = await navigator.wakeLock.request("screen"); lock.addEventListener("release", () => (lock = null)); } } catch (e) {} }
+
+  // ---------- wiring ----------
+  $("next").onclick = next;
+  $("undo").onclick = undo;
+  $("newGame").onclick = restart;
+  $("connect").onclick = bleConnect;
+  $("clear").onclick = () => { const b = Aurora.encode([], ble.api); log(`→ погасить: ${hex(b)}`); bleSend(b); };
+  function setMode(m) {
+    mode = m;
+    $("modeMock").setAttribute("aria-pressed", String(m === "mock"));
+    $("modeBle").setAttribute("aria-pressed", String(m === "ble"));
+    $("connCard").hidden = m !== "ble";
+    push();
+  }
+  $("modeMock").onclick = () => setMode("mock");
+  $("modeBle").onclick = () => setMode("ble");
+  $("height").value = settings.heightCm; $("heightOut").textContent = settings.heightCm + " см";
+  $("height").oninput = (e) => { settings.heightCm = +e.target.value; $("heightOut").textContent = settings.heightCm + " см"; save(); game.setOptions({ heightCm: settings.heightCm }); };
+  $("cross").checked = settings.allowCross;
+  $("cross").onchange = (e) => { settings.allowCross = e.target.checked; save(); game.setOptions({ allowCross: settings.allowCross }); };
+  $("boltOnly").checked = settings.boltOnly;
+  $("boltOnly").onchange = (e) => {
+    settings.boltOnly = e.target.checked; save();
+    game = Twister.create(playable(), { heightCm: settings.heightCm, allowCross: settings.allowCross });
+    restart(); next();
+  };
+  $("bleApi").value = String(settings.bleApi);
+  $("bleApi").onchange = (e) => {
+    settings.bleApi = e.target.value === "auto" ? "auto" : Number(e.target.value); save();
+    if (ble.char) setConn("on", `${ble.device.name || "Стена"} · ${apiLabel()}`);
+    push();
+  };
+  $("mockApi").value = String(settings.mockApi);
+  $("mockApi").onchange = (e) => { settings.mockApi = +e.target.value; save(); push(); };
+  document.addEventListener("keydown", (e) => {
+    if (e.target.closest("input, select, textarea")) return;
+    if (e.key === " " || e.key === "Enter" || e.key === "ArrowRight") { if (!e.target.closest("button") || e.target.id === "next") { e.preventDefault(); next(); } }
+    else if (e.key === "Backspace" || e.key === "ArrowLeft") { e.preventDefault(); undo(); }
+  });
+
+  applyColors();
+  buildSwatches($("sw1"), "c1", "c2"); buildSwatches($("sw2"), "c2", "c1");
+  // Open in a working state: start position plus the first move, so the preview shows 5 lit holds.
+  push(); next();
+})();
+</script>
+
+</body>
+</html>
