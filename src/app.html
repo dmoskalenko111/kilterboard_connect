@@ -202,7 +202,12 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 <script>
 (() => {
   const RAW = /*HOLDS*/;
-  const holds = RAW.map(([id, x, y, led, set, kb]) => ({ id, x, y, led, set, kickboard: !!kb }));
+  // Hand-hold grades from 227 000 real Kilter climbs (data/hand_grades.json): [percentile, avg grade, hand-capable screw-on]
+  const GRADES = /*GRADES*/;
+  const holds = RAW.map(([id, x, y, led, set, kb]) => {
+    const g = GRADES[id];
+    return { id, x, y, led, set, kickboard: !!kb, handGrade: g ? g[0] : null, handAlt: !!(g && g[2]) };
+  });
   const byLed = new Map(holds.map((h) => [h.led, h]));
   const $ = (id) => document.getElementById(id);
   const SVGNS = "http://www.w3.org/2000/svg";
@@ -216,10 +221,10 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   // ---------- settings ----------
   const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true };
   const LEVEL_TEXT = {
-    easy: "Короткие шаги, только крупные зацепки, тело не растягивается сильно.",
+    easy: "Короткие шаги, удобные зацепки под руки, только крупные зацепки, тело не растягивается сильно.",
     medium: "Шаги средней длины; ноги иногда на мелких зацепках для ног.",
-    hard: "Длинные шаги и широкие растяжки, ноги чаще на мелких зацепках.",
-    hardcore: "Шаги и растяжки у предела тела, ноги почти всегда на мелких зацепках. Для сильных и гибких.",
+    hard: "Длинные шаги и широкие растяжки, под руки чаще трудные зацепки, ноги чаще на мелких.",
+    hardcore: "Шаги и растяжки у предела тела, трудные зацепки под руки, иногда мелкие — те, что в реальных трассах берут рукой с 7a+. Для сильных и гибких.",
   };
   const LEVEL_SHORT = { easy: "лёгкий", medium: "средний", hard: "сложный", hardcore: "хардкор" };
   let settings = { ...defaults };

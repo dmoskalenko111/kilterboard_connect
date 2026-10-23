@@ -8,10 +8,12 @@ import json, pathlib
 root = pathlib.Path(__file__).parent
 src = root / "src"
 holds = json.loads((root / "holds.json").read_text())
+grades = json.loads((root / "data" / "hand_grades.json").read_text())   # from tools/make_grades.py
 page = (src / "app.html").read_text(encoding="utf-8")
 page = (page.replace("/*PROTOCOL*/", (src / "protocol.js").read_text(encoding="utf-8"))
             .replace("/*TWISTER*/", (src / "twister.js").read_text(encoding="utf-8"))
-            .replace("/*HOLDS*/", json.dumps(holds, separators=(",", ":"))))
+            .replace("/*HOLDS*/", json.dumps(holds, separators=(",", ":")))
+            .replace("/*GRADES*/", json.dumps(grades, separators=(",", ":"))))
 assert "/*" + "HOLDS*/" not in page
 
 dist = root / "dist"

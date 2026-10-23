@@ -3,7 +3,9 @@ const path = require("path");
 const Aurora = require("../src/protocol.js");
 const Twister = require("../src/twister.js");
 const raw = require("../holds.json");
-const holds = raw.map(([id, x, y, led, set, kb]) => ({ id, x, y, led, set, kickboard: !!kb }));
+const GR = require("../data/hand_grades.json");
+const holds = raw.map(([id, x, y, led, set, kb]) => ({ id, x, y, led, set, kickboard: !!kb,
+  handGrade: GR[id] ? GR[id][0] : null, handAlt: !!(GR[id] && GR[id][2]) }));
 
 let passed = 0;
 const t = (name, fn) => { fn(); passed++; console.log("ok  " + name); };
@@ -119,7 +121,8 @@ t("twister: every level x height never gets stuck, with all holds and bolt-ons o
         const s = game.next();
         assert.ok(!s.stuck, `${level} ${heightCm}cm pool=${pool.length} game ${g} step ${i}`);
         if (level === "easy") assert.strictEqual(s.pending.hold.set, 1, "easy uses big holds only");
-        if (s.pending.limb[1] === "H") assert.strictEqual(s.pending.hold.set, 1, `${level}: hand sent to a foothold`);
+        if (s.pending.limb[1] === "H" && s.pending.hold.set !== 1)
+          assert.ok(level === "hardcore" && s.pending.hold.handAlt, `${level}: hand sent to a foothold that real climbs don't use by hand`);
       }
     }
   }
@@ -152,17 +155,23 @@ t("twister: levels differ — longer moves and more small holds as difficulty ri
   const stats = {};
   for (const level of ["easy", "medium", "hard", "hardcore"]) {
     const game = Twister.create(holds, { level }, rng(42)); game.start();
-    let sum = 0, small = 0; const n = 600;
+    let sum = 0, small = 0, alt = 0; const hg = []; const n = 600;
     for (let i = 0; i < n; i++) {
       const before = game.snapshot().pos; const s = game.next();
       const from = before[s.pending.limb] || s.pos[s.pending.limb];
       sum += Math.hypot(s.pending.hold.x - from.x, s.pending.hold.y - from.y);
-      if (s.pending.hold.set !== 1) { small++; assert.ok(s.pending.limb[1] === "F", "only feet go on footholds"); }
+      if (s.pending.hold.set !== 1 && s.pending.limb[1] === "F") small++;
+      if (s.pending.limb[1] === "H") { hg.push(s.pending.hold.set === 1 ? GR[s.pending.hold.id][1] : null); if (s.pending.hold.set !== 1) alt++; }
     }
-    stats[level] = { move: sum / n, small: small / n };
+    const g = hg.filter((v) => v != null);
+    stats[level] = { move: sum / n, small: small / n, grade: g.reduce((a, b) => a + b, 0) / g.length, alt: alt / hg.length };
   }
   assert.ok(stats.easy.move < stats.medium.move && stats.medium.move < stats.hard.move && stats.hard.move < stats.hardcore.move, JSON.stringify(stats));
   assert.ok(stats.easy.small === 0 && stats.hard.small > stats.medium.small && stats.hardcore.small > stats.hard.small, JSON.stringify(stats));
+  assert.ok(stats.easy.grade < stats.medium.grade && stats.medium.grade < stats.hard.grade && stats.hard.grade < stats.hardcore.grade, "hand-hold grade rises with level " + JSON.stringify(stats));
+  assert.ok(stats.hardcore.alt > 0.03 && stats.hardcore.alt < 0.25 && stats.hard.alt === 0, "small holds for hands only on hardcore, sometimes");
+  console.log("    средний грейд трасс на зацепках под руку:", Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, v.grade.toFixed(1)])),
+    "руки на мелких (хардкор):", Math.round(stats.hardcore.alt * 100) + "%");
   console.log("    средний шаг, см:", Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, Math.round(v.move * 2.54)])),
     "доля ходов на мелкие зацепки для ног:", Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, Math.round(v.small * 100) + "%"])));
 });

@@ -16,16 +16,20 @@ const Twister = (() => {
   //   reach    max length of one move                     minMove  shortest move allowed
   //   feetBigOnly   feet only on large holds;   footSmallBias  chance a foot is sent to a small foothold
   //   farBias       chance to pick from the longer half of possible moves
+  //   gradeBias     preference by hand-hold grade (from real climbs): <0 comfortable holds, >0 hard ones
+  //   handAltRate   chance a hand is sent to a small hold that real climbs do use by hand (hardcore only)
   // Hands always go on hand holds. Kilter Original has 323 bolt-on hand holds and 153 screw-on
   // footholds (the board's own data gives every screw-on the default role "foot"), so a screw-on is
   // never given to a hand; harder levels make the feet, not the hands, use the small holds.
   const LEVELS = {
-    easy:     { hands: 0.55, feet: 0.45, body: 0.95, lean: 0.30, reach: 0.32, minMove: 0.03, feetBigOnly: true,  footSmallBias: 0,   farBias: 0 },
-    medium:   { hands: 0.65, feet: 0.55, body: 1.05, lean: 0.36, reach: 0.40, minMove: 0.03, feetBigOnly: false, footSmallBias: 0,   farBias: 0 },
-    hard:     { hands: 0.75, feet: 0.65, body: 1.15, lean: 0.42, reach: 0.50, minMove: 0.12, feetBigOnly: false, footSmallBias: 0.6, farBias: 0.7 },
-    hardcore: { hands: 0.85, feet: 0.75, body: 1.22, lean: 0.48, reach: 0.58, minMove: 0.20, feetBigOnly: false, footSmallBias: 0.9, farBias: 0.9 },
+    easy:     { hands: 0.55, feet: 0.45, body: 0.95, lean: 0.30, reach: 0.32, minMove: 0.03, feetBigOnly: true,  footSmallBias: 0,   farBias: 0,   gradeBias: -3,  handAltRate: 0 },
+    medium:   { hands: 0.65, feet: 0.55, body: 1.05, lean: 0.36, reach: 0.40, minMove: 0.03, feetBigOnly: false, footSmallBias: 0,   farBias: 0,   gradeBias: -1,  handAltRate: 0 },
+    hard:     { hands: 0.75, feet: 0.65, body: 1.15, lean: 0.42, reach: 0.50, minMove: 0.12, feetBigOnly: false, footSmallBias: 0.6, farBias: 0.7, gradeBias: 1.5, handAltRate: 0 },
+    hardcore: { hands: 0.85, feet: 0.75, body: 1.22, lean: 0.48, reach: 0.58, minMove: 0.20, feetBigOnly: false, footSmallBias: 0.9, farBias: 0.9, gradeBias: 3,   handAltRate: 0.12 },
   };
   const handHold = (h) => h.set === 1;        // bolt-on; screw-ons (set 20) are footholds
+  // Grade percentile of a hand hold: 0 = used in the easiest real climbs, 1 = the hardest; 0.5 if unknown.
+  const gradeOf = (h) => (h.handGrade == null ? 0.5 : h.handGrade);
   // Absolute anatomy limits (fractions of H) that no level may exceed; used by the tests.
   const ANATOMY = { hands: 0.9, feet: 0.8, body: 1.25 };
 
@@ -69,7 +73,7 @@ const Twister = (() => {
       const h = H(), lv = L();
       const d = dist(pos[limb], c);
       if (d < lv.minMove * h || d > reach) return false;
-      if (isHand(limb) ? !handHold(c) : lv.feetBigOnly && !handHold(c)) return false;
+      if (isHand(limb) ? !(handHold(c) || (lv.handAltRate && c.handAlt)) : lv.feetBigOnly && !handHold(c)) return false;
       const np = { ...pos, [limb]: c };
       if (np.LH.y < 24 || np.RH.y < 24) return false;                         // no hands on kickboard
       if (Math.min(np.LH.y, np.RH.y) - Math.max(np.LF.y, np.RF.y) < 0.25 * h) return false; // hands above feet
@@ -122,7 +126,21 @@ const Twister = (() => {
         const from = pos[limb];
         pool = [...pool].sort((a, b) => dist(from, b) - dist(from, a)).slice(0, Math.ceil(pool.length / 2));
       }
+      if (isHand(limb)) {
+        // Small holds for hands only on hardcore, only those real climbs use by hand, and only sometimes.
+        const alt = pool.filter((h) => !handHold(h));
+        const main = pool.filter((h) => handHold(h));
+        pool = alt.length && (rng() < lv.handAltRate || !main.length) ? alt : main;
+        if (lv.gradeBias) return weighted(pool, (h) => Math.exp(lv.gradeBias * (gradeOf(h) - 0.5) * 2));
+      }
       return pick(pool);
+    }
+
+    function weighted(arr, w) {
+      const ws = arr.map(w), total = ws.reduce((a, b) => a + b, 0);
+      let r = rng() * total;
+      for (let i = 0; i < arr.length; i++) { r -= ws[i]; if (r <= 0) return arr[i]; }
+      return arr[arr.length - 1];
     }
 
     function undo() {
