@@ -76,6 +76,8 @@ details.conn[open] > summary { margin-bottom: 12px; }
 .btn { flex: 1 1 0; min-width: 0; border: 1px solid var(--line); background: transparent; border-radius: 12px; padding: 11px 10px; cursor: pointer; font-weight: 500; white-space: nowrap; }
 .btn:hover:not(:disabled) { border-color: var(--muted); }
 .btn:disabled { opacity: .4; cursor: default; }
+.btn.fell:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+.check > span { min-width: 0; }
 
 .conn .status { display: flex; align-items: center; gap: 8px; font-size: .9rem; min-width: 0; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
@@ -141,7 +143,8 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 
     <button class="next" id="next" type="button">Дальше</button>
     <div class="row">
-      <button class="btn" id="undo" type="button" disabled>Отменить ход</button>
+      <button class="btn" id="undo" type="button" disabled>Отменить</button>
+      <button class="btn fell" id="fell" type="button" disabled>Сорвался</button>
       <button class="btn" id="newGame" type="button">Новая игра</button>
     </div>
 
@@ -174,6 +177,8 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       <div class="field"><span>Цвет 2 — новая зацепка</span><div class="swatches" id="sw2"></div></div>
       <label class="check field"><input id="cross" type="checkbox"> Разрешить скрещивать руки и ноги</label>
       <label class="check field"><input id="boltOnly" type="checkbox"> На стене только болт-оны (без мелких скрю-онов)</label>
+      <label class="check field"><input id="climb" type="checkbox"> <span>Подъём: ходы ведут вверх до верха стены, потом обратно вниз</span></label>
+      <label class="check field"><input id="match" type="checkbox"> <span>Перехват: две руки или две ноги могут стоять на одной зацепке</span></label>
       <div class="field"><span>Версия протокола мока</span>
         <select id="mockApi"><option value="3">API 3 (новые контроллеры)</option><option value="2">API 2 (старые)</option></select></div>
       <div class="field"><span>Проверка карты зацепок</span>
@@ -219,7 +224,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   ];
 
   // ---------- settings ----------
-  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true };
+  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, best: {} };
   const LEVEL_TEXT = {
     easy: "Короткие шаги, удобные зацепки под руки, только крупные зацепки, тело не растягивается сильно.",
     medium: "Шаги средней длины; ноги иногда на мелких зацепках для ног.",
@@ -475,7 +480,15 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   // ---------- game ----------
   let mode = "mock";
   const playable = () => (settings.boltOnly ? holds.filter((h) => h.set === 1) : holds);
-  const gameOptions = () => ({ heightCm: settings.heightCm, allowCross: settings.allowCross, level: settings.level });
+  const gameOptions = () => ({ heightCm: settings.heightCm, allowCross: settings.allowCross, level: settings.level,
+    climb: settings.climb, allowMatch: settings.allowMatch });
+  // Score: moves completed before falling; best result per level is kept on this phone.
+  let fallen = null;   // {completed, best, record} after «Сорвался»
+  const movesWord = (n) => {
+    const a = n % 10, b = n % 100;
+    return n + " " + (a === 1 && b !== 11 ? "ход" : a >= 2 && a <= 4 && (b < 12 || b > 14) ? "хода" : "ходов");
+  };
+  const bestFor = (level) => (settings.best && settings.best[level]) || 0;
   let game = Twister.create(playable(), gameOptions());
   let state = game.start();
   let prevPos = null;
@@ -531,7 +544,11 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       return;
     }
     currentLabels = new Map();
-    for (const l of state.lit) currentLabels.set(l.hold.led, { label: l.role === "new" ? LIMB_SHORT[l.limb] + "?" : LIMB_SHORT[l.limb], isNew: l.role === "new" });
+    for (const l of state.lit) {
+      const limbs = (l.limbs || (l.role === "new" ? [] : [l.limb])).map((x) => LIMB_SHORT[x]);
+      const nl = l.role === "new" ? LIMB_SHORT[l.newLimb || l.limb] + "?" : null;
+      currentLabels.set(l.hold.led, { label: [...limbs, ...(nl ? [nl] : [])].join("+"), isNew: l.role === "new" });
+    }
     currentArrow = state.pending ? { from: state.pos[state.pending.limb], to: state.pending.hold } : null;
     const placements = state.lit.map((l) => ({ position: l.hold.led, color: l.role === "new" ? settings.c2 : settings.c1 }));
     const bytes = Aurora.encode(placements, api());
@@ -545,8 +562,20 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   const ARROWS = ["→", "↗", "↑", "↖", "←", "↙", "↓", "↘"];
   function renderMove() {
     const box = $("move"); box.classList.toggle("stuck", !!state.stuck);
-    $("undo").disabled = !state.canUndo;
-    $("stepNo").textContent = (state.step ? `ход ${state.step} · ` : "") + LEVEL_SHORT[settings.level];
+    $("undo").disabled = !state.canUndo || !!fallen;
+    $("fell").disabled = !!fallen || calibrating || !state.pending;
+    $("next").textContent = fallen ? "Заново" : "Дальше";
+    const best = bestFor(settings.level);
+    $("stepNo").textContent = (state.step ? `ход ${state.step} · ` : "") + (best ? `рекорд ${best} · ` : "") + LEVEL_SHORT[settings.level];
+    if (fallen) {
+      $("moveLabel").textContent = "Результат";
+      $("stepNo").textContent = LEVEL_SHORT[settings.level];
+      $("limb").className = "limb idle"; $("limb").textContent = movesWord(fallen.completed);
+      $("hint").innerHTML = fallen.record
+        ? (fallen.best ? `<b>Новый рекорд!</b> Прежний: ${movesWord(fallen.best)}.` : "<b>Первый результат на этом уровне.</b>")
+        : `Рекорд на этом уровне: <b>${movesWord(fallen.best)}</b>.`;
+      return;
+    }
     if (state.stuck) {
       $("moveLabel").textContent = "Тупик";
       $("limb").className = "limb"; $("limb").textContent = "Некуда ходить";
@@ -565,15 +594,27 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     const cm = Math.round(Math.hypot(dx, dy) * 2.54);
     $("moveLabel").textContent = "Переставьте";
     $("limb").className = "limb"; $("limb").textContent = Twister.NAMES[limb];
-    $("hint").innerHTML = `${dir} на <b>${cm} см</b> · на зацепку цвета 2`;
+    const partner = Twister.LIMBS.find((l) => l !== limb && state.pos[l].id === hold.id);
+    $("hint").innerHTML = `${dir} на <b>${cm} см</b> · ` + (partner
+      ? `перехват: на зацепку, где ${Twister.NAMES[partner].toLowerCase()}`
+      : "на зацепку цвета 2");
   }
 
   function next() {
     if (calibrating) { calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; push(); return; }
+    if (fallen) { restart(); return; }
     state = game.next(); push(); wake();
   }
-  function undo() { calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; state = game.undo(); push(); }
-  function restart() { game.setOptions(gameOptions()); state = game.start(); push(); }
+  function fell() {
+    if (fallen || calibrating || !state.pending) return;
+    const completed = state.completed, best = bestFor(settings.level), record = completed > best;
+    if (record) { settings.best = { ...(settings.best || {}), [settings.level]: completed }; save(); }
+    fallen = { completed, best, record };
+    log(`Сорвался: ${movesWord(completed)} на уровне «${LEVEL_SHORT[settings.level]}»` + (record ? ", новый рекорд" : ""));
+    renderMove();
+  }
+  function undo() { if (fallen) return; calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; state = game.undo(); push(); }
+  function restart() { fallen = null; game.setOptions(gameOptions()); state = game.start(); push(); }
 
   let lock = null;
   async function wake() { try { if (!lock && navigator.wakeLock) { lock = await navigator.wakeLock.request("screen"); lock.addEventListener("release", () => (lock = null)); } } catch (e) {} }
@@ -582,6 +623,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   $("next").onclick = next;
   $("undo").onclick = undo;
   $("newGame").onclick = restart;
+  $("fell").onclick = fell;
   $("connect").onclick = bleConnect;
   $("calib").onclick = () => {
     calibrating = !calibrating;
@@ -603,6 +645,10 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   $("modeBle").onclick = () => setMode("ble");
   $("height").value = settings.heightCm; $("heightOut").textContent = settings.heightCm + " см";
   $("height").oninput = (e) => { settings.heightCm = +e.target.value; $("heightOut").textContent = settings.heightCm + " см"; save(); game.setOptions({ heightCm: settings.heightCm }); };
+  $("climb").checked = !!settings.climb;
+  $("climb").onchange = (e) => { settings.climb = e.target.checked; save(); game.setOptions({ climb: settings.climb }); };
+  $("match").checked = !!settings.allowMatch;
+  $("match").onchange = (e) => { settings.allowMatch = e.target.checked; save(); game.setOptions({ allowMatch: settings.allowMatch }); };
   $("cross").checked = settings.allowCross;
   $("cross").onchange = (e) => { settings.allowCross = e.target.checked; save(); game.setOptions({ allowCross: settings.allowCross }); };
   function showLevel() {

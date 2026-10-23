@@ -176,6 +176,91 @@ t("twister: levels differ — longer moves and more small holds as difficulty ri
     "доля ходов на мелкие зацепки для ног:", Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, Math.round(v.small * 100) + "%"])));
 });
 
+t("twister: hands always at least 35% of height above the highest foot", () => {
+  for (const level of Object.keys(Twister.LEVELS)) for (const heightCm of [150, 175, 200]) {
+    const H = heightCm / 2.54, game = Twister.create(holds, { level, heightCm }, rng(heightCm * 3 + level.length));
+    let s = game.start();
+    for (let i = 0; i < 300; i++) {
+      s = game.next();
+      const p = { ...s.pos, [s.pending.limb]: s.pending.hold };
+      assert.ok(Math.min(p.LH.y, p.RH.y) - Math.max(p.LF.y, p.RF.y) >= 0.35 * H - 1e-9, `${level} ${heightCm}`);
+    }
+  }
+});
+
+// Average hand height over a game and how often hands reach the top / come back down.
+function heights(opts, seed, n = 600) {
+  const game = Twister.create(holds, opts, rng(seed)); game.start();
+  let sum = 0, top = 0, highMoves = [0, 0], turns = 0, last = null;
+  for (let i = 0; i < n; i++) {
+    const before = game.snapshot();
+    const s = game.next();
+    const hTop = Math.max(s.pos.LH.y, s.pos.RH.y);
+    sum += hTop; if (hTop >= 128) top++;
+    // hand moves made while a hand is above ~3 m: going down vs up
+    if (s.pending.limb[1] === "H" && Math.max(before.pos.LH.y, before.pos.RH.y) >= 120) highMoves[s.pending.hold.y < before.pos[s.pending.limb].y ? 0 : 1]++;
+    if (last && last !== s.phase) turns++; last = s.phase;
+  }
+  return { avg: sum / n, top: top / n, down: highMoves[0], up: highMoves[1], turns };
+}
+
+t("twister: climb mode goes up to the top and back down; off by default", () => {
+  for (const level of Object.keys(Twister.LEVELS)) {
+    const off = heights({ level }, 11), on = heights({ level, climb: true }, 11);
+    assert.ok(on.avg > off.avg + 8, `${level}: climb should raise average hand height (${off.avg.toFixed(0)} -> ${on.avg.toFixed(0)})`);
+    assert.ok(on.turns >= 4, `${level}: climb should turn at the top and at the bottom several times (${on.turns})`);
+    assert.strictEqual(off.turns, 0);
+  }
+  assert.strictEqual(Twister.create(holds, {}).options.climb, false);
+});
+
+t("twister: high on the wall, moves go down more often than up; climb mode does not linger at the top", () => {
+  let down = 0, up = 0;
+  for (const level of Object.keys(Twister.LEVELS)) {
+    for (const seed of [23, 24, 25, 26]) { const r = heights({ level }, seed + level.length, 2000); down += r.down; up += r.up; }
+  }
+  assert.ok(down + up > 100 && down > up * 1.5, `climb off: hand moves high on the wall down ${down} vs up ${up}`);
+  console.log(`    руки выше 3 м, ходы руками: вниз ${down}, вверх ${up}`);
+  for (const level of Object.keys(Twister.LEVELS)) {
+    // longest run of consecutive moves with a hand above ~3.25 m
+    const game = Twister.create(holds, { level, climb: true }, rng(31 + level.length)); game.start();
+    let run = 0, longest = 0;
+    for (let i = 0; i < 800; i++) { const s = game.next(); run = Math.max(s.pos.LH.y, s.pos.RH.y) >= 128 ? run + 1 : 0; longest = Math.max(longest, run); }
+    assert.ok(longest <= 16, `${level}: stayed high for ${longest} moves in a row`);
+  }
+});
+
+t("twister: matching off by default; when on, limbs sometimes share a hold and rules still hold", () => {
+  assert.strictEqual(Twister.create(holds, {}).options.allowMatch, false);
+  for (const level of Object.keys(Twister.LEVELS)) {
+    const game = Twister.create(holds, { level, allowMatch: true }, rng(77 + level.length)); game.start();
+    let shared = 0, prev = game.snapshot();
+    for (let i = 0; i < 500; i++) {
+      const s = game.next();
+      assert.ok(!s.stuck);
+      const ids = Object.values(s.pos).map((h) => h.id);
+      if (new Set(ids).size < 4 || ids.includes(s.pending.hold.id)) shared++;
+      assert.ok(s.lit.length <= 5 && new Set(s.lit.map((x) => x.hold.id)).size === s.lit.length, "one entry per lit hold");
+      if (prev.pending) {
+        const vac = prev.pos[prev.pending.limb].id;
+        const stillHeld = Object.values(s.pos).some((h) => h.id === vac);
+        assert.strictEqual(s.lit.some((x) => x.hold.id === vac), stillHeld, "vacated hold dark unless a matched limb is still on it");
+      }
+      prev = s;
+    }
+    assert.ok(shared > 0, `${level}: matching never happened`);
+  }
+});
+
+t("twister: completed moves counter", () => {
+  const game = Twister.create(holds, {}, rng(5));
+  assert.strictEqual(game.start().completed, 0);
+  assert.strictEqual(game.next().completed, 0);   // first target lit, not done yet
+  assert.strictEqual(game.next().completed, 1);
+  assert.strictEqual(game.next().completed, 2);
+  assert.strictEqual(game.undo().completed, 1);
+});
+
 t("twister: undo restores the previous wall exactly", () => {
   const game = Twister.create(holds, {}, rng(7));
   game.start(); game.next(); const a = game.next();
