@@ -6,17 +6,23 @@ const Twister = (() => {
   const isHand = (l) => l === "LH" || l === "RH";
   const other = { LH: "RH", RH: "LH", LF: "RF", RF: "LF" };
 
-  // Difficulty: distances in inches for a 175 cm player (scaled by height).
-  //   reach/minMove  how far one move can go;  stretch  hands-top to feet-bottom;
-  //   handSpread/footSpread  max distance between the two hands / feet;  lean  sideways body offset;
-  //   bigHoldsOnly  targets only on large bolt-on holds;  smallBias  chance to prefer small screw-ons;
-  //   farBias  chance to pick from the longer half of possible moves.
+  // Difficulty as a simple body model. Every limit is a fraction of the player's height H and is
+  // checked as a straight-line distance between hold centres. Reference anatomy (adult, ape index ~1):
+  //   arm span ≈ 1.0 H fingertip to fingertip → ≈ 0.9 H between the centres of two hand holds;
+  //   soles to a hold overhead ≈ 1.25 H;  feet split ≈ 0.8 H for a flexible person.
+  // Levels stay below these limits; hardcore sits close to them: very hard, still physically possible.
+  //   hands    max distance between the two hands        feet   between the two feet
+  //   body     max distance from any hand to any foot     lean   sideways offset of hands vs feet midpoints
+  //   reach    max length of one move                     minMove  shortest move allowed
+  //   bigHoldsOnly / smallBias / farBias  hold size and move length preferences
   const LEVELS = {
-    easy:   { reach: 24, minMove: 6,  stretch: 72, handSpread: 52, footSpread: 46, lean: 28, bigHoldsOnly: true,  smallBias: 0,   farBias: 0 },
-    medium: { reach: 30, minMove: 6,  stretch: 80, handSpread: 64, footSpread: 54, lean: 34, bigHoldsOnly: false, smallBias: 0,   farBias: 0 },
-    hard:   { reach: 38, minMove: 12, stretch: 88, handSpread: 72, footSpread: 60, lean: 40, bigHoldsOnly: false, smallBias: 0.6, farBias: 0.7 },
-    hardcore: { reach: 46, minMove: 18, stretch: 94, handSpread: 80, footSpread: 66, lean: 46, bigHoldsOnly: false, smallBias: 0.95, farBias: 0.9 },
+    easy:     { hands: 0.55, feet: 0.45, body: 0.95, lean: 0.30, reach: 0.32, minMove: 0.03, bigHoldsOnly: true,  smallBias: 0,    farBias: 0 },
+    medium:   { hands: 0.65, feet: 0.55, body: 1.05, lean: 0.36, reach: 0.40, minMove: 0.03, bigHoldsOnly: false, smallBias: 0,    farBias: 0 },
+    hard:     { hands: 0.75, feet: 0.65, body: 1.15, lean: 0.42, reach: 0.50, minMove: 0.12, bigHoldsOnly: false, smallBias: 0.6,  farBias: 0.7 },
+    hardcore: { hands: 0.85, feet: 0.75, body: 1.22, lean: 0.48, reach: 0.58, minMove: 0.20, bigHoldsOnly: false, smallBias: 0.95, farBias: 0.9 },
   };
+  // Absolute anatomy limits (fractions of H) that no level may exceed; used by the tests.
+  const ANATOMY = { hands: 0.9, feet: 0.8, body: 1.25 };
 
   // holds: [{id, x, y, led, kickboard}]
   function create(holds, options = {}, rng = Math.random) {
@@ -28,7 +34,7 @@ const Twister = (() => {
     let history = [];
     let step = 0;
 
-    const k = () => opt.heightCm / 175;           // body scale
+    const H = () => opt.heightCm / 2.54;          // player's height in wall units (inches)
     const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
     const pick = (arr) => arr[Math.floor(rng() * arr.length)];
 
@@ -39,14 +45,15 @@ const Twister = (() => {
     }
 
     function start() {
-      const s = k(), used = new Set();
-      const big = (h) => !L().bigHoldsOnly || h.set === 1;
+      const h = H(), used = new Set();
+      const big = (x) => !L().bigHoldsOnly || x.set === 1;
       const cx = 72 + (rng() - 0.5) * 24;
-      const plan = { LF: [cx - 7, 8], RF: [cx + 7, 8], LH: [cx - 11, 8 + 52 * s], RH: [cx + 11, 8 + 52 * s] };
+      // Feet together low, hands shoulder-width at about chest height: a relaxed start for any level.
+      const plan = { LF: [cx - 7, 8], RF: [cx + 7, 8], LH: [cx - 0.16 * h, 8 + 0.75 * h], RH: [cx + 0.16 * h, 8 + 0.75 * h] };
       pos = {};
       for (const l of ["LF", "RF", "LH", "RH"]) {
-        const h = nearest(plan[l][0], plan[l][1], used, (h) => big(h) && (isHand(l) ? h.y >= 24 : true));
-        pos[l] = h; used.add(h.id);
+        const hold = nearest(plan[l][0], plan[l][1], used, (x) => big(x) && (isHand(l) ? x.y >= 24 : true));
+        pos[l] = hold; used.add(hold.id);
       }
       pending = null; lastLimb = null; history = []; step = 0;
       return snapshot();
@@ -54,22 +61,21 @@ const Twister = (() => {
 
     // Is hold c an acceptable new place for limb, given the other limbs stay put?
     function fits(limb, c, reach) {
-      const s = k(), lv = L();
-      const from = pos[limb];
-      const d = dist(from, c);
-      if (d < lv.minMove * s || d > reach) return false;
+      const h = H(), lv = L();
+      const d = dist(pos[limb], c);
+      if (d < lv.minMove * h || d > reach) return false;
       if (lv.bigHoldsOnly && c.set !== 1) return false;
       const np = { ...pos, [limb]: c };
-      const handsLow = Math.min(np.LH.y, np.RH.y), handsHigh = Math.max(np.LH.y, np.RH.y);
-      const feetLow = Math.min(np.LF.y, np.RF.y), feetHigh = Math.max(np.LF.y, np.RF.y);
-      if (np.LH.y < 24 || np.RH.y < 24) return false;            // no hands on kickboard
-      if (handsLow - feetHigh < 18 * s) return false;              // hands clearly above feet
-      if (handsHigh - feetLow > lv.stretch * s) return false;      // body can't stretch further
-      if (Math.abs(np.LH.x - np.RH.x) > lv.handSpread * s || Math.abs(np.LH.y - np.RH.y) > 36 * s) return false;
-      if (Math.abs(np.LF.x - np.RF.x) > lv.footSpread * s || Math.abs(np.LF.y - np.RF.y) > 34 * s) return false;
+      if (np.LH.y < 24 || np.RH.y < 24) return false;                         // no hands on kickboard
+      if (Math.min(np.LH.y, np.RH.y) - Math.max(np.LF.y, np.RF.y) < 0.25 * h) return false; // hands above feet
+      if (dist(np.LH, np.RH) > lv.hands * h) return false;                     // arm span
+      if (dist(np.LF, np.RF) > lv.feet * h) return false;                      // leg split
+      for (const hand of [np.LH, np.RH]) for (const foot of [np.LF, np.RF]) {
+        if (dist(hand, foot) > lv.body * h) return false;                      // hand to foot, diagonals included
+      }
       if (!opt.allowCross && (np.LH.x > np.RH.x + 6 || np.LF.x > np.RF.x + 6)) return false;
       const midHands = (np.LH.x + np.RH.x) / 2, midFeet = (np.LF.x + np.RF.x) / 2;
-      if (Math.abs(midHands - midFeet) > lv.lean * s) return false; // don't lean too far sideways
+      if (Math.abs(midHands - midFeet) > lv.lean * h) return false;           // don't lean too far sideways
       return true;
     }
 
@@ -84,7 +90,7 @@ const Twister = (() => {
       if (history.length > 200) history.shift();
       let freed = null;
       if (pending) { freed = pos[pending.limb]; pos = { ...pos, [pending.limb]: pending.hold }; pending = null; }
-      const baseReach = L().reach * k();
+      const baseReach = L().reach * H();
       const order = LIMBS.filter((l) => l !== lastLimb).sort(() => rng() - 0.5);
       if (lastLimb) order.push(lastLimb);                         // same limb twice only as a fallback
       for (const reach of [baseReach, baseReach * 1.25]) {
@@ -137,6 +143,6 @@ const Twister = (() => {
     return { start, next, undo, snapshot, setOptions, get options() { return { ...opt }; } };
   }
 
-  return { create, LIMBS, NAMES, LEVELS };
+  return { create, LIMBS, NAMES, LEVELS, ANATOMY };
 })();
 if (typeof module !== "undefined") module.exports = Twister;

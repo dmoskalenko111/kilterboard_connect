@@ -124,6 +124,29 @@ t("twister: every level x height never gets stuck, with all holds and bolt-ons o
   }
 });
 
+t("twister: every position is physically possible (arm span, leg split, hand to foot) on every level", () => {
+  const A = Twister.ANATOMY, d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const worst = {};
+  for (const level of Object.keys(Twister.LEVELS)) for (const heightCm of [150, 175, 200]) {
+    const H = heightCm / 2.54;
+    const game = Twister.create(holds, { level, heightCm }, rng(heightCm + level.length * 31)); game.start();
+    for (let i = 0; i < 400; i++) {
+      const s = game.next();
+      // the position the player is asked to reach: current stance with the moving limb on the new hold
+      const p = { ...s.pos, [s.pending.limb]: s.pending.hold };
+      const hands = d(p.LH, p.RH) / H, feet = d(p.LF, p.RF) / H;
+      const body = Math.max(...[p.LH, p.RH].flatMap((h) => [p.LF, p.RF].map((f) => d(h, f)))) / H;
+      assert.ok(hands <= A.hands && feet <= A.feet && body <= A.body, `${level} ${heightCm}: hands ${hands.toFixed(2)} feet ${feet.toFixed(2)} body ${body.toFixed(2)}`);
+      if (heightCm === 175) {
+        const w = (worst[level] ||= { hands: 0, feet: 0, body: 0 });
+        w.hands = Math.max(w.hands, hands * heightCm); w.feet = Math.max(w.feet, feet * heightCm); w.body = Math.max(w.body, body * heightCm);
+      }
+    }
+  }
+  console.log("    максимум при росте 175, см (руки / ноги / рука–нога):",
+    Object.fromEntries(Object.entries(worst).map(([k, v]) => [k, [v.hands, v.feet, v.body].map(Math.round).join(" / ")])));
+});
+
 t("twister: levels differ — longer moves and more small holds as difficulty rises", () => {
   const stats = {};
   for (const level of ["easy", "medium", "hard", "hardcore"]) {
