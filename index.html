@@ -164,6 +164,13 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 
     <details class="card" id="settings">
       <summary>Настройки</summary>
+      <div class="field"><span>Проверка карты зацепок</span>
+        <button class="btn" id="calib" type="button">Зажечь контрольный узор</button>
+        <p class="note" id="calibNote">Сверьте стену с превью: <b style="color:#ff4040">красный</b> — левый верхний угол,
+          <b style="color:#5a7dff">синий</b> — правый верхний, <b style="color:#40ff40">зелёный</b> — левый нижний,
+          <b style="color:#ffff40">жёлтый</b> — правый нижний, <b style="color:#ffffff">белый</b> — нижний ряд кикборда,
+          <b style="color:#40ffff">голубой</b> — диагональ из левого нижнего угла в правый верхний.
+          Если стена отражена или узор сдвинут, напишите, что видите. «Дальше» вернёт игру.</p></div>
       <div class="field"><span>Цвет 1 — зацепки, на которых стоите</span><div class="swatches" id="sw1"></div></div>
       <div class="field"><span>Цвет 2 — новая зацепка</span><div class="swatches" id="sw2"></div></div>
       <div class="field"><span>Рост игрока (масштаб шагов)</span>
@@ -549,26 +556,52 @@ if (typeof module !== "undefined") module.exports = Twister;
       $("connNote").innerHTML = "Откройте страницу в <b>Chrome</b> на Android или компьютере по адресу <code>https://…</code>. Во встроенном просмотре и в iPhone Web Bluetooth не работает; режим «Мок» работает везде.";
       return;
     }
+    // Each step is named so an error says where it happened. NotFoundError means "chooser cancelled"
+    // only at the first step; later it means the device lacks the expected service or characteristic.
+    const STEPS = { choose: "выбор устройства", connect: "соединение", service: "поиск UART-сервиса", char: "поиск характеристики записи" };
+    let step = "choose", device = null, server = null;
     try {
       setConn("", "Выберите стену в списке…");
-      const device = await navigator.bluetooth.requestDevice({ filters: [{ services: [Aurora.ADVERTISED_SERVICE] }], optionalServices: [Aurora.UART_SERVICE] });
+      device = await navigator.bluetooth.requestDevice({ filters: [{ services: [Aurora.ADVERTISED_SERVICE] }], optionalServices: [Aurora.UART_SERVICE] });
       device.addEventListener("gattserverdisconnected", () => { ble.char = null; setConn("", "Стена отключилась"); log("BLE: отключено"); });
+      step = "connect";
       setConn("", "Подключаюсь к " + (device.name || "стене") + "…");
-      const server = await device.gatt.connect();
+      log(`BLE: выбрано «${device.name || "без имени"}», соединяюсь`);
+      server = await device.gatt.connect();
+      step = "service";
+      log("BLE: соединение есть, ищу сервисы");
       const svc = await server.getPrimaryService(Aurora.UART_SERVICE);
+      step = "char";
       ble.char = await svc.getCharacteristic(Aurora.RX_CHARACTERISTIC);
       ble.device = device; ble.nameApi = Aurora.apiFromName(device.name);
       setConn("on", `${device.name || "Стена"} · ${apiLabel()}`);
       log(`BLE: подключено к «${device.name || "?"}», протокол ${apiLabel()}`);
+      $("connNote").textContent = "Подключено. Если на стене горит не то, что на превью, нажмите «Проверка карты» в настройках.";
       push();
     } catch (e) {
       ble.char = null;
-      if (e && e.name === "NotFoundError") setConn("", "Выбор отменён");
-      else if (e && e.name === "SecurityError") {
+      const name = (e && e.name) || "Error", msg = (e && e.message) || String(e);
+      log(`BLE: ошибка на шаге «${STEPS[step]}»: ${name}: ${msg}`, true);
+      if (step === "choose" && name === "NotFoundError") { setConn("", "Выбор отменён"); return; }
+      if (name === "SecurityError") {
         setConn("err", "Браузер запретил Bluetooth на этой странице");
-        $("connNote").innerHTML = "Здесь Bluetooth заблокирован. Откройте файл страницы напрямую по <code>https://</code> (например, с GitHub Pages) в Chrome.";
-      } else setConn("err", "Ошибка: " + (e && e.message ? e.message : e));
-      log("BLE: " + (e && e.message ? e.message : e), true);
+        $("connNote").innerHTML = "Здесь Bluetooth заблокирован. Откройте страницу по <code>https://</code> (например, с GitHub Pages) в Chrome.";
+        return;
+      }
+      setConn("err", `Ошибка: ${STEPS[step]} (${name})`);
+      if (step === "service" || step === "char") {
+        // Show what the phone does see on this device: helps tell a stale cache from a wrong device.
+        try {
+          const all = await server.getPrimaryServices();
+          log("BLE: телефон видит на устройстве сервисы: " + (all.map((s) => s.uuid).join(", ") || "ни одного"), true);
+        } catch (e2) { log("BLE: список сервисов недоступен: " + (e2.message || e2), true); }
+        $("connNote").innerHTML = "Устройство найдено, но нужного сервиса на нём нет. Если это эмулятор на ноутбуке: " +
+          "удалите ноутбук из сопряжённых устройств в настройках Bluetooth телефона, выключите и включите Bluetooth на телефоне, " +
+          "перезапустите эмулятор и подключитесь снова. Подробности — в «Журнале пакетов».";
+      } else {
+        $("connNote").textContent = "Подробности — в «Журнале пакетов». Попробуйте подойти ближе и подключиться снова.";
+      }
+      try { if (device && device.gatt.connected) device.gatt.disconnect(); } catch (e3) {}
     }
   }
   async function bleSend(bytes) {
@@ -598,7 +631,38 @@ if (typeof module !== "undefined") module.exports = Twister;
 
   function api() { return mode === "ble" && ble.char ? ble.api : settings.mockApi; }
 
+  // ---------- map check: a pattern whose wrong mirroring or shift is obvious on the real wall ----------
+  let calibrating = false;
+  function calibrationPattern() {
+    const near = (x, y, pool = holds) => pool.reduce((a, b) => (Math.hypot(b.x - x, b.y - y) < Math.hypot(a.x - x, a.y - y) ? b : a));
+    const out = new Map(); // led -> {hold, color, label}
+    const put = (h, color, label) => { if (!out.has(h.led)) out.set(h.led, { hold: h, color, label }); };
+    const bolts = holds.filter((h) => h.set === 1 && !h.kickboard);
+    put(near(0, 156, bolts), "FF0000", "↖");
+    put(near(144, 156, bolts), "0000FF", "↗");
+    put(near(0, 16, bolts), "00FF00", "↙");
+    put(near(144, 16, bolts), "FFFF00", "↘");
+    const kbLow = Math.min(...holds.filter((h) => h.kickboard).map((h) => h.y));
+    holds.filter((h) => h.kickboard && h.y === kbLow).forEach((h) => put(h, "FFFFFF", ""));
+    for (let t = 1; t < 10; t++) put(near(t * 14.4, 16 + t * 14, bolts), "00FFFF", "");
+    return [...out.values()];
+  }
+
   function push() {
+    if (calibrating) {
+      const pat = calibrationPattern();
+      currentLabels = new Map(pat.map((p) => [p.hold.led, { label: p.label, isNew: false }]));
+      currentArrow = null;
+      const bytes = Aurora.encode(pat.map((p) => ({ position: p.hold.led, color: p.color })), api());
+      log(`→ проверка карты: ${pat.length} зацепок, ${bytes.length} байт`);
+      decoder.reset();
+      for (const c of Aurora.chunks(bytes)) decoder.feed(c);
+      if (mode === "ble" && ble.char) bleSend(bytes);
+      $("moveLabel").textContent = "Проверка карты"; $("stepNo").textContent = "";
+      $("limb").className = "limb idle"; $("limb").textContent = "Сверьте узор";
+      $("hint").textContent = "Углы, нижний ряд и диагональ должны совпасть с превью. «Дальше» — назад к игре.";
+      return;
+    }
     currentLabels = new Map();
     for (const l of state.lit) currentLabels.set(l.hold.led, { label: l.role === "new" ? LIMB_SHORT[l.limb] + "?" : LIMB_SHORT[l.limb], isNew: l.role === "new" });
     currentArrow = state.pending ? { from: state.pos[state.pending.limb], to: state.pending.hold } : null;
@@ -637,8 +701,11 @@ if (typeof module !== "undefined") module.exports = Twister;
     $("hint").innerHTML = `${dir} на <b>${cm} см</b> · на зацепку цвета 2`;
   }
 
-  function next() { state = game.next(); push(); wake(); }
-  function undo() { state = game.undo(); push(); }
+  function next() {
+    if (calibrating) { calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; push(); return; }
+    state = game.next(); push(); wake();
+  }
+  function undo() { calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; state = game.undo(); push(); }
   function restart() { game.setOptions({ heightCm: settings.heightCm, allowCross: settings.allowCross }); state = game.start(); push(); }
 
   let lock = null;
@@ -649,6 +716,12 @@ if (typeof module !== "undefined") module.exports = Twister;
   $("undo").onclick = undo;
   $("newGame").onclick = restart;
   $("connect").onclick = bleConnect;
+  $("calib").onclick = () => {
+    calibrating = !calibrating;
+    $("calib").textContent = calibrating ? "Вернуться к игре" : "Зажечь контрольный узор";
+    push();
+    if (calibrating) $("wall").scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   $("clear").onclick = () => { const b = Aurora.encode([], ble.api); log(`→ погасить: ${hex(b)}`); bleSend(b); };
   function setMode(m) {
     mode = m;
