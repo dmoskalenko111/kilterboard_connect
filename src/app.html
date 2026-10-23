@@ -47,6 +47,8 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--panel); }
 .seg button { border: 0; background: transparent; padding: 6px 14px; border-radius: 999px; cursor: pointer; color: var(--muted); font-weight: 500; }
 .seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+#levelSeg { display: flex; }
+#levelSeg button { flex: 1 1 0; min-width: 0; padding: 8px 6px; }
 
 .wallwrap { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
 #wall { display: block; width: 100%; max-width: min(100%, 560px); max-height: 54vh; aspect-ratio: 152 / 162; height: auto; }
@@ -154,12 +156,19 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 
     <details class="card" id="settings">
       <summary>Настройки</summary>
+      <div class="field"><span>Сложность</span>
+        <div class="seg" role="group" aria-label="Сложность" id="levelSeg">
+          <button type="button" data-level="easy" aria-pressed="false">Лёгкий</button>
+          <button type="button" data-level="medium" aria-pressed="true">Средний</button>
+          <button type="button" data-level="hard" aria-pressed="false">Сложный</button>
+        </div>
+        <p class="note" id="levelNote"></p></div>
       <div class="field"><span>Проверка карты зацепок</span>
         <button class="btn" id="calib" type="button">Зажечь контрольный узор</button>
         <p class="note" id="calibNote">Сверьте стену с превью: <b style="color:#ff4040">красный</b> — левый верхний угол,
           <b style="color:#5a7dff">синий</b> — правый верхний, <b style="color:#40ff40">зелёный</b> — левый нижний,
           <b style="color:#ffff40">жёлтый</b> — правый нижний, <b style="color:#ffffff">белый</b> — нижний ряд кикборда,
-          <b style="color:#40ffff">голубой</b> — диагональ из левого нижнего угла в правый верхний.
+          <b style="color:#40ffff">голубой</b> — ровная диагональ под 45° от левого края над кикбордом до правого верхнего угла, без пропусков.
           Если стена отражена или узор сдвинут, напишите, что видите. «Дальше» вернёт игру.</p></div>
       <div class="field"><span>Цвет 1 — зацепки, на которых стоите</span><div class="swatches" id="sw1"></div></div>
       <div class="field"><span>Цвет 2 — новая зацепка</span><div class="swatches" id="sw2"></div></div>
@@ -199,7 +208,13 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   ];
 
   // ---------- settings ----------
-  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false };
+  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium" };
+  const LEVEL_TEXT = {
+    easy: "Короткие шаги, только крупные зацепки, тело не растягивается сильно.",
+    medium: "Шаги средней длины, крупные и мелкие зацепки.",
+    hard: "Длинные шаги и широкие растяжки, чаще мелкие зацепки.",
+  };
+  const LEVEL_SHORT = { easy: "лёгкий", medium: "средний", hard: "сложный" };
   let settings = { ...defaults };
   try { Object.assign(settings, JSON.parse(localStorage.getItem("kilterTwister") || "{}")); } catch (e) {}
   const save = () => { try { localStorage.setItem("kilterTwister", JSON.stringify(settings)); } catch (e) {} };
@@ -448,7 +463,8 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   // ---------- game ----------
   let mode = "mock";
   const playable = () => (settings.boltOnly ? holds.filter((h) => h.set === 1) : holds);
-  let game = Twister.create(playable(), { heightCm: settings.heightCm, allowCross: settings.allowCross });
+  const gameOptions = () => ({ heightCm: settings.heightCm, allowCross: settings.allowCross, level: settings.level });
+  let game = Twister.create(playable(), gameOptions());
   let state = game.start();
   let prevPos = null;
 
@@ -467,7 +483,12 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     put(near(144, 16, bolts), "FFFF00", "↘");
     const kbLow = Math.min(...holds.filter((h) => h.kickboard).map((h) => h.y));
     holds.filter((h) => h.kickboard && h.y === kbLow).forEach((h) => put(h, "FFFFFF", ""));
-    for (let t = 1; t < 10; t++) put(near(t * 14.4, 16 + t * 14, bolts), "00FFFF", "");
+    // A true 45° line: holds with equal x - y lie exactly on one diagonal of the hole grid. Take the one
+    // through the top-right-most hold; on the 12x12 board it runs from just above the kickboard on the
+    // left (4,20) to the top-right corner (136,152), one hold every 4 inches (every 8 with bolt-ons only).
+    const pool = holds.filter((h) => !h.kickboard && (!settings.boltOnly || h.set === 1));
+    const top = pool.reduce((a, b) => (b.x + b.y > a.x + a.y ? b : a));
+    pool.filter((h) => h.x - h.y === top.x - top.y).sort((a, b) => a.y - b.y).forEach((h) => put(h, "00FFFF", ""));
     return [...out.values()];
   }
 
@@ -502,7 +523,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   function renderMove() {
     const box = $("move"); box.classList.toggle("stuck", !!state.stuck);
     $("undo").disabled = !state.canUndo;
-    $("stepNo").textContent = state.step ? `ход ${state.step}` : "";
+    $("stepNo").textContent = (state.step ? `ход ${state.step} · ` : "") + LEVEL_SHORT[settings.level];
     if (state.stuck) {
       $("moveLabel").textContent = "Тупик";
       $("limb").className = "limb"; $("limb").textContent = "Некуда ходить";
@@ -529,7 +550,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     state = game.next(); push(); wake();
   }
   function undo() { calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; state = game.undo(); push(); }
-  function restart() { game.setOptions({ heightCm: settings.heightCm, allowCross: settings.allowCross }); state = game.start(); push(); }
+  function restart() { game.setOptions(gameOptions()); state = game.start(); push(); }
 
   let lock = null;
   async function wake() { try { if (!lock && navigator.wakeLock) { lock = await navigator.wakeLock.request("screen"); lock.addEventListener("release", () => (lock = null)); } } catch (e) {} }
@@ -559,10 +580,19 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   $("height").oninput = (e) => { settings.heightCm = +e.target.value; $("heightOut").textContent = settings.heightCm + " см"; save(); game.setOptions({ heightCm: settings.heightCm }); };
   $("cross").checked = settings.allowCross;
   $("cross").onchange = (e) => { settings.allowCross = e.target.checked; save(); game.setOptions({ allowCross: settings.allowCross }); };
+  function showLevel() {
+    for (const b of $("levelSeg").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.level === settings.level));
+    $("levelNote").textContent = LEVEL_TEXT[settings.level] + " Действует со следующего хода; для нового старта нажмите «Новая игра».";
+  }
+  for (const b of $("levelSeg").querySelectorAll("button")) b.onclick = () => {
+    settings.level = b.dataset.level; save(); game.setOptions({ level: settings.level }); showLevel(); renderMove();
+  };
+  if (!LEVEL_TEXT[settings.level]) settings.level = "medium";
+  showLevel();
   $("boltOnly").checked = settings.boltOnly;
   $("boltOnly").onchange = (e) => {
     settings.boltOnly = e.target.checked; save();
-    game = Twister.create(playable(), { heightCm: settings.heightCm, allowCross: settings.allowCross });
+    game = Twister.create(playable(), gameOptions());
     restart(); next();
   };
   $("bleApi").value = String(settings.bleApi);

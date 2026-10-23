@@ -109,6 +109,40 @@ t("twister: bolt-ons only (no screw-ons) still never gets stuck", () => {
   }
 });
 
+t("twister: every level x height never gets stuck, with all holds and bolt-ons only", () => {
+  const bolts = holds.filter((h) => h.set === 1);
+  for (const level of ["easy", "medium", "hard"]) for (const heightCm of [150, 165, 175, 190, 205]) for (const pool of [holds, bolts]) {
+    for (let g = 0; g < 4; g++) {
+      const game = Twister.create(pool, { level, heightCm }, rng(heightCm * 7 + g + level.length));
+      game.start();
+      for (let i = 0; i < 250; i++) {
+        const s = game.next();
+        assert.ok(!s.stuck, `${level} ${heightCm}cm pool=${pool.length} game ${g} step ${i}`);
+        if (level === "easy") assert.strictEqual(s.pending.hold.set, 1, "easy uses big holds only");
+      }
+    }
+  }
+});
+
+t("twister: levels differ — longer moves and more small holds as difficulty rises", () => {
+  const stats = {};
+  for (const level of ["easy", "medium", "hard"]) {
+    const game = Twister.create(holds, { level }, rng(42)); game.start();
+    let sum = 0, small = 0; const n = 600;
+    for (let i = 0; i < n; i++) {
+      const before = game.snapshot().pos; const s = game.next();
+      const from = before[s.pending.limb] || s.pos[s.pending.limb];
+      sum += Math.hypot(s.pending.hold.x - from.x, s.pending.hold.y - from.y);
+      if (s.pending.hold.set !== 1) small++;
+    }
+    stats[level] = { move: sum / n, small: small / n };
+  }
+  assert.ok(stats.easy.move < stats.medium.move && stats.medium.move < stats.hard.move, JSON.stringify(stats));
+  assert.ok(stats.easy.small === 0 && stats.hard.small > stats.medium.small, JSON.stringify(stats));
+  console.log("    средний шаг, см:", Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, Math.round(v.move * 2.54)])),
+    "доля мелких:", Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, Math.round(v.small * 100) + "%"])));
+});
+
 t("twister: undo restores the previous wall exactly", () => {
   const game = Twister.create(holds, {}, rng(7));
   game.start(); game.next(); const a = game.next();
