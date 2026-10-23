@@ -54,7 +54,10 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .seg button { border: 0; background: transparent; padding: 6px 14px; border-radius: 999px; cursor: pointer; color: var(--muted); font-weight: 500; }
 .seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
 #levelSeg { display: flex; }
-#levelSeg button { flex: 1 1 0; min-width: 0; padding: 8px 6px; }
+#levelSeg button { flex: 1 1 0; min-width: 0; padding: 8px 4px; font-size: .88rem; }
+details.conn > summary { align-items: center; gap: 8px; font-weight: 400; }
+details.conn[open] > summary { margin-bottom: 12px; }
+.conn-body { display: grid; gap: 10px; }
 
 .wallwrap { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
 #wall { display: block; width: 100%; max-width: min(100%, 560px); max-height: 54vh; aspect-ratio: 152 / 162; height: auto; }
@@ -80,8 +83,7 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .btn:hover:not(:disabled) { border-color: var(--muted); }
 .btn:disabled { opacity: .4; cursor: default; }
 
-.conn { display: grid; gap: 10px; }
-.conn .status { display: flex; align-items: center; gap: 8px; font-size: .9rem; }
+.conn .status { display: flex; align-items: center; gap: 8px; font-size: .9rem; min-width: 0; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
 .dot.on { background: var(--c1); box-shadow: 0 0 10px var(--c1); }
 .dot.err { background: var(--danger); }
@@ -153,41 +155,45 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       <button class="btn" id="newGame" type="button">Новая игра</button>
     </div>
 
-    <div class="card conn" id="connCard" hidden>
-      <div class="status"><span class="dot" id="dot"></span><span id="connText">Не подключено</span></div>
-      <div class="row">
-        <button class="btn" id="connect" type="button">Подключить стену</button>
-        <button class="btn" id="clear" type="button" disabled>Погасить</button>
+    <details class="card conn" id="connCard" open hidden>
+      <summary><span class="status"><span class="dot" id="dot"></span><span id="connText">Не подключено</span></span></summary>
+      <div class="conn-body">
+        <div class="row">
+          <button class="btn" id="connect" type="button">Подключить стену</button>
+          <button class="btn" id="clear" type="button" disabled>Погасить</button>
+        </div>
+        <label class="field" for="bleApi"><span>Версия протокола стены</span>
+          <select id="bleApi"><option value="auto">Авто (по имени стены)</option><option value="3">API 3</option><option value="2">API 2</option></select></label>
+        <p class="note" id="connNote">Нужен Chrome на Android или компьютере и страница, открытая по HTTPS. Официальное приложение на время игры закройте: к стене может быть подключён только один телефон.</p>
       </div>
-      <label class="field" for="bleApi"><span>Версия протокола стены</span>
-        <select id="bleApi"><option value="auto">Авто (по имени стены)</option><option value="3">API 3</option><option value="2">API 2</option></select></label>
-      <p class="note" id="connNote">Нужен Chrome на Android или компьютере и страница, открытая по HTTPS. Официальное приложение на время игры закройте: к стене может быть подключён только один телефон.</p>
-    </div>
+    </details>
 
     <details class="card" id="settings">
       <summary>Настройки</summary>
+      <div class="field"><span>Рост игрока (масштаб шагов)</span>
+        <div class="rangeval"><input id="height" type="range" min="140" max="205" step="5" value="175"><output id="heightOut">175 см</output></div></div>
       <div class="field"><span>Сложность</span>
         <div class="seg" role="group" aria-label="Сложность" id="levelSeg">
           <button type="button" data-level="easy" aria-pressed="false">Лёгкий</button>
           <button type="button" data-level="medium" aria-pressed="true">Средний</button>
           <button type="button" data-level="hard" aria-pressed="false">Сложный</button>
+          <button type="button" data-level="hardcore" aria-pressed="false">Хардкор</button>
         </div>
         <p class="note" id="levelNote"></p></div>
-      <div class="field"><span>Проверка карты зацепок</span>
-        <button class="btn" id="calib" type="button">Зажечь контрольный узор</button>
-        <p class="note" id="calibNote">Сверьте стену с превью: <b style="color:#ff4040">красный</b> — левый верхний угол,
-          <b style="color:#5a7dff">синий</b> — правый верхний, <b style="color:#40ff40">зелёный</b> — левый нижний,
-          <b style="color:#ffff40">жёлтый</b> — правый нижний, <b style="color:#ffffff">белый</b> — нижний ряд кикборда,
-          <b style="color:#40ffff">голубой</b> — ровная диагональ под 45° от левого края над кикбордом до правого верхнего угла, без пропусков.
-          Если стена отражена или узор сдвинут, напишите, что видите. «Дальше» вернёт игру.</p></div>
       <div class="field"><span>Цвет 1 — зацепки, на которых стоите</span><div class="swatches" id="sw1"></div></div>
       <div class="field"><span>Цвет 2 — новая зацепка</span><div class="swatches" id="sw2"></div></div>
-      <div class="field"><span>Рост игрока (масштаб шагов)</span>
-        <div class="rangeval"><input id="height" type="range" min="140" max="205" step="5" value="175"><output id="heightOut">175 см</output></div></div>
       <label class="check field"><input id="cross" type="checkbox"> Разрешить скрещивать руки и ноги</label>
       <label class="check field"><input id="boltOnly" type="checkbox"> На стене только болт-оны (без мелких скрю-онов)</label>
       <div class="field"><span>Версия протокола мока</span>
         <select id="mockApi"><option value="3">API 3 (новые контроллеры)</option><option value="2">API 2 (старые)</option></select></div>
+      <div class="field"><span>Проверка карты зацепок</span>
+        <button class="btn" id="calib" type="button">Зажечь контрольный узор</button>
+        <p class="note" id="calibNote">Сверьте стену с превью. Углы: <b style="color:#ff4040">красный</b> — левый верхний,
+          <b style="color:#5a7dff">синий</b> — правый верхний, <b style="color:#40ff40">зелёный</b> — левый нижний,
+          <b style="color:#ffff40">жёлтый</b> — правый нижний. <b style="color:#ffffff">Белый</b> — кикборд, крупные зацепки через одну.
+          <b style="color:#40ffff">Голубой</b> — ровная диагональ под 45° от левого края над кикбордом до синего угла.
+          Две строки из 8 цветов показывают все цвета из настроек: верхняя слева направо, нижняя — справа налево,
+          в порядке кружков выбора цвета. Если стена отражена или узор сдвинут, напишите, что видите. «Дальше» вернёт игру.</p></div>
     </details>
 
     <details class="card" id="logCard">
@@ -340,6 +346,7 @@ const Twister = (() => {
     easy:   { reach: 24, minMove: 6,  stretch: 72, handSpread: 52, footSpread: 46, lean: 28, bigHoldsOnly: true,  smallBias: 0,   farBias: 0 },
     medium: { reach: 30, minMove: 6,  stretch: 80, handSpread: 64, footSpread: 54, lean: 34, bigHoldsOnly: false, smallBias: 0,   farBias: 0 },
     hard:   { reach: 38, minMove: 12, stretch: 88, handSpread: 72, footSpread: 60, lean: 40, bigHoldsOnly: false, smallBias: 0.6, farBias: 0.7 },
+    hardcore: { reach: 46, minMove: 18, stretch: 94, handSpread: 80, footSpread: 66, lean: 46, bigHoldsOnly: false, smallBias: 0.95, farBias: 0.9 },
   };
 
   // holds: [{id, x, y, led, kickboard}]
@@ -481,13 +488,14 @@ if (typeof module !== "undefined") module.exports = Twister;
   ];
 
   // ---------- settings ----------
-  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium" };
+  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true };
   const LEVEL_TEXT = {
     easy: "Короткие шаги, только крупные зацепки, тело не растягивается сильно.",
     medium: "Шаги средней длины, крупные и мелкие зацепки.",
     hard: "Длинные шаги и широкие растяжки, чаще мелкие зацепки.",
+    hardcore: "Предельно длинные шаги и растяжки, почти только мелкие зацепки. Для сильных и гибких.",
   };
-  const LEVEL_SHORT = { easy: "лёгкий", medium: "средний", hard: "сложный" };
+  const LEVEL_SHORT = { easy: "лёгкий", medium: "средний", hard: "сложный", hardcore: "хардкор" };
   let settings = { ...defaults };
   try { Object.assign(settings, JSON.parse(localStorage.getItem("kilterTwister") || "{}")); } catch (e) {}
   const save = () => { try { localStorage.setItem("kilterTwister", JSON.stringify(settings)); } catch (e) {} };
@@ -746,22 +754,33 @@ if (typeof module !== "undefined") module.exports = Twister;
   // ---------- map check: a pattern whose wrong mirroring or shift is obvious on the real wall ----------
   let calibrating = false;
   function calibrationPattern() {
-    const near = (x, y, pool = holds) => pool.reduce((a, b) => (Math.hypot(b.x - x, b.y - y) < Math.hypot(a.x - x, a.y - y) ? b : a));
+    // Everything on large bolt-ons, so the pattern is the same with or without screw-ons on the wall.
+    const bolts = holds.filter((h) => h.set === 1);
+    const face = bolts.filter((h) => !h.kickboard);
+    const near = (x, y, pool) => pool.reduce((a, b) => (Math.hypot(b.x - x, b.y - y) < Math.hypot(a.x - x, a.y - y) ? b : a));
+    const at = (x, y) => face.find((h) => h.x === x && h.y === y);
     const out = new Map(); // led -> {hold, color, label}
-    const put = (h, color, label) => { if (!out.has(h.led)) out.set(h.led, { hold: h, color, label }); };
-    const bolts = holds.filter((h) => h.set === 1 && !h.kickboard);
-    put(near(0, 156, bolts), "FF0000", "↖");
-    put(near(144, 156, bolts), "0000FF", "↗");
-    put(near(0, 16, bolts), "00FF00", "↙");
-    put(near(144, 16, bolts), "FFFF00", "↘");
-    const kbLow = Math.min(...holds.filter((h) => h.kickboard).map((h) => h.y));
-    holds.filter((h) => h.kickboard && h.y === kbLow).forEach((h) => put(h, "FFFFFF", ""));
-    // A true 45° line: holds with equal x - y lie exactly on one diagonal of the hole grid. Take the one
-    // through the top-right-most hold; on the 12x12 board it runs from just above the kickboard on the
-    // left (4,20) to the top-right corner (136,152), one hold every 4 inches (every 8 with bolt-ons only).
-    const pool = holds.filter((h) => !h.kickboard && (!settings.boltOnly || h.set === 1));
-    const top = pool.reduce((a, b) => (b.x + b.y > a.x + a.y ? b : a));
-    pool.filter((h) => h.x - h.y === top.x - top.y).sort((a, b) => a.y - b.y).forEach((h) => put(h, "00FFFF", ""));
+    const put = (h, color, label) => { if (h) { out.delete(h.led); out.set(h.led, { hold: h, color, label }); } };
+    // Kickboard: its bolt-on row, every other hold.
+    bolts.filter((h) => h.kickboard).sort((a, b) => a.x - b.x).filter((_, i) => i % 2 === 0).forEach((h) => put(h, "FFFFFF", ""));
+    // A true 45° line through the top-right-most hold: equal x - y means one diagonal of the hole grid.
+    // On the 12x12 board: 16 bolt-ons, 8 inches apart, from (8,24) to the top-right corner (136,152).
+    const top = face.reduce((a, b) => (b.x + b.y > a.x + a.y ? b : a));
+    const diag = face.filter((h) => h.x - h.y === top.x - top.y).sort((a, b) => a.y - b.y);
+    diag.forEach((h) => put(h, "00FFFF", ""));
+    // Colour demo: every palette colour in settings order, as a row above the diagonal and the same row
+    // turned 180° about the diagonal's centre, so the whole figure is centrally symmetric.
+    const cx = (diag[0].x + diag[diag.length - 1].x) / 2, cy = (diag[0].y + diag[diag.length - 1].y) / 2;
+    PALETTE.forEach(([hex], i) => {
+      const x = 8 + i * 8, y = 136;
+      put(at(x, y), hex, String(i + 1));
+      put(at(2 * cx - x, 2 * cy - y), hex, String(i + 1));
+    });
+    // Corners last, so they win over anything else at the same spot.
+    put(near(0, 156, face), "FF0000", "↖");
+    put(near(144, 156, face), "0000FF", "↗");
+    put(near(0, 16, face), "00FF00", "↙");
+    put(near(144, 16, face), "FFFF00", "↘");
     return [...out.values()];
   }
 
@@ -847,6 +866,8 @@ if (typeof module !== "undefined") module.exports = Twister;
     $("connCard").hidden = m !== "ble";
     push();
   }
+  $("connCard").open = settings.connOpen !== false;
+  $("connCard").addEventListener("toggle", () => { settings.connOpen = $("connCard").open; save(); });
   $("modeMock").onclick = () => setMode("mock");
   $("modeBle").onclick = () => setMode("ble");
   $("height").value = settings.heightCm; $("heightOut").textContent = settings.heightCm + " см";

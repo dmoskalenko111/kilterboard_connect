@@ -15,6 +15,7 @@ const Twister = (() => {
     easy:   { reach: 24, minMove: 6,  stretch: 72, handSpread: 52, footSpread: 46, lean: 28, bigHoldsOnly: true,  smallBias: 0,   farBias: 0 },
     medium: { reach: 30, minMove: 6,  stretch: 80, handSpread: 64, footSpread: 54, lean: 34, bigHoldsOnly: false, smallBias: 0,   farBias: 0 },
     hard:   { reach: 38, minMove: 12, stretch: 88, handSpread: 72, footSpread: 60, lean: 40, bigHoldsOnly: false, smallBias: 0.6, farBias: 0.7 },
+    hardcore: { reach: 46, minMove: 18, stretch: 94, handSpread: 80, footSpread: 66, lean: 46, bigHoldsOnly: false, smallBias: 0.95, farBias: 0.9 },
   };
 
   // holds: [{id, x, y, led, kickboard}]
