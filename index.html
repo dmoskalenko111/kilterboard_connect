@@ -960,7 +960,7 @@ if (typeof module !== "undefined") module.exports = Twister;
     if (!s.pending) return "На старт.";
     const { limb, hold } = s.pending, from = s.pos[limb];
     const partner = Twister.LIMBS.find((l) => l !== limb && s.pos[l].id === hold.id);
-    if (partner) return `Перехват. ${Twister.NAMES[limb]} на зацепку ${OF_LIMB[partner]}.`;
+    if (partner) return `${Twister.NAMES[limb]} на зацепку ${OF_LIMB[partner]}.`;
     let t = Twister.NAMES[limb];
     if (hold.set !== 1 && (settings.level === "hard" || settings.level === "hardcore")) t += ", на мелкую";
     t += ".";
@@ -1015,13 +1015,12 @@ if (typeof module !== "undefined") module.exports = Twister;
   function next(silent) {
     if (calibrating) { calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; push(); return; }
     if (fallen) { restart(); return; }
-    const prevPhase = state.phase, prevDone = state.completed;
+    const prevPhase = state.phase;
     state = game.next(); push(); wake();
     if (silent) return;
     const parts = [];
     if (settings.climb && state.phase !== prevPhase) parts.push(state.phase === "down" ? "Наверху. Теперь вниз." : "Снова вверх.");
     const done = state.completed, best = bestFor(settings.level);
-    if (done > prevDone && done % 10 === 0) parts.push(movesWord(done) + "!");
     if (!recordSaid && best > 0 && done > best) { parts.push("Новый рекорд!"); recordSaid = true; }
     parts.push(movePhrase(state));
     voice.say(parts.join(" "));
