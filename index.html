@@ -53,8 +53,8 @@ header { display: flex; align-items: center; justify-content: space-between; gap
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--panel); }
 .seg button { border: 0; background: transparent; padding: 6px 14px; border-radius: 999px; cursor: pointer; color: var(--muted); font-weight: 500; }
 .seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
-#levelSeg { display: flex; }
-#levelSeg button { flex: 1 1 0; min-width: 0; padding: 8px 4px; font-size: .88rem; }
+#levelSeg, #voiceSeg { display: flex; }
+#levelSeg button, #voiceSeg button { flex: 1 1 0; min-width: 0; padding: 8px 4px; font-size: .88rem; }
 details.conn > summary { align-items: center; gap: 8px; font-weight: 400; }
 details.conn[open] > summary { margin-bottom: 12px; }
 .conn-body { display: grid; gap: 10px; }
@@ -193,6 +193,13 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
         <label class="check"><input id="climb" type="checkbox"> <span>Подъём: ходы ведут вверх до верха стены, потом обратно вниз</span></label>
         <label class="check"><input id="boltOnly" type="checkbox"> <span>На стене только болт-оны (без мелких скрю-онов)</span></label>
       </div>
+      <div class="field"><span>Озвучка</span>
+        <div class="seg" role="group" aria-label="Озвучка" id="voiceSeg">
+          <button type="button" data-voice="off" aria-pressed="true">Выкл</button>
+          <button type="button" data-voice="short" aria-pressed="false">Кратко</button>
+          <button type="button" data-voice="full" aria-pressed="false">Подробно</button>
+        </div>
+        <p class="note" id="voiceNote"></p></div>
       <div class="field"><span>Цвет 1 — зацепки, на которых стоите</span><div class="swatches" id="sw1"></div></div>
       <div class="field"><span>Цвет 2 — новая зацепка</span><div class="swatches" id="sw2"></div></div>
       <div class="field"><span>Проверка карты зацепок</span>
@@ -576,7 +583,7 @@ if (typeof module !== "undefined") module.exports = Twister;
   ];
 
   // ---------- settings ----------
-  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, best: {} };
+  const defaults = { c1: "00FF00", c2: "FF00FF", heightCm: 175, allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, best: {}, voice: "off" };
   const LEVEL_TEXT = {
     easy: "Короткие шаги, удобные зацепки под руки, только крупные зацепки, тело не растягивается сильно.",
     medium: "Шаги средней длины; ноги иногда на мелких зацепках для ног.",
@@ -912,6 +919,59 @@ if (typeof module !== "undefined") module.exports = Twister;
   }
 
   const ARROWS = ["→", "↗", "↑", "↖", "←", "↙", "↓", "↘"];
+  const dirIndex = (dx, dy) => (Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8;
+
+  // ---------- voice: the device's own speech synthesis, Russian voices that work without internet only ----------
+  // Nothing leaves the phone: offline voices synthesise on the device. Online voices are never used.
+  const voice = (() => {
+    const synth = window.speechSynthesis;
+    let chosen = null;
+    function pick() {
+      if (!synth) return null;
+      const ru = synth.getVoices().filter((v) => /^ru/i.test(v.lang) && v.localService);
+      chosen = ru.find((v) => v.default) || ru[0] || null;
+      note();
+      return chosen;
+    }
+    function note() {
+      const el = $("voiceNote");
+      if (!el) return;
+      if (!synth || typeof SpeechSynthesisUtterance === "undefined") el.textContent = "Этот браузер не умеет озвучивать текст. Откройте приложение в Chrome.";
+      else if (!chosen) el.textContent = "На устройстве нет русского голоса, работающего без интернета. Android: Настройки → Система → Язык и ввод → Синтез речи → Синтезатор речи Google → скачайте русский голос.";
+      else el.textContent = `Голос устройства «${chosen.name}», работает без интернета.`;
+    }
+    function say(text) {
+      if (settings.voice === "off" || !synth || !text) return;
+      if (!chosen) pick();
+      if (!chosen) return;
+      synth.cancel();                                  // a new command replaces one still being spoken
+      const u = new SpeechSynthesisUtterance(text);
+      u.voice = chosen; u.lang = chosen.lang;
+      synth.speak(u);
+    }
+    if (synth) { pick(); synth.addEventListener ? synth.addEventListener("voiceschanged", pick) : (synth.onvoiceschanged = pick); }
+    return { say, note, stop() { if (synth) synth.cancel(); } };
+  })();
+
+  const SAY_DIRS = ["Вправо", "Вверх и вправо", "Вверх", "Вверх и влево", "Влево", "Вниз и влево", "Вниз", "Вниз и вправо"];
+  const OF_LIMB = { LH: "левой руки", RH: "правой руки", LF: "левой ноги", RF: "правой ноги" };
+  function movePhrase(s) {
+    if (s.stuck) return "Некуда ходить. Отмените ход или начните заново.";
+    if (!s.pending) return "На старт.";
+    const { limb, hold } = s.pending, from = s.pos[limb];
+    const partner = Twister.LIMBS.find((l) => l !== limb && s.pos[l].id === hold.id);
+    if (partner) return `Перехват. ${Twister.NAMES[limb]} на зацепку ${OF_LIMB[partner]}.`;
+    let t = Twister.NAMES[limb];
+    if (hold.set !== 1 && (settings.level === "hard" || settings.level === "hardcore")) t += ", на мелкую";
+    t += ".";
+    if (settings.voice === "full") {
+      const dx = hold.x - from.x, dy = hold.y - from.y;
+      const cm = Math.max(5, Math.round((Math.hypot(dx, dy) * 2.54) / 5) * 5);   // always ends in 0 or 5: «сантиметров»
+      t += ` ${SAY_DIRS[dirIndex(dx, dy)]}, ${cm} сантиметров.`;
+    }
+    return t;
+  }
+  let recordSaid = false;   // «Новый рекорд!» once per game, when the best result is beaten
   function renderMove() {
     const box = $("move"); box.classList.toggle("stuck", !!state.stuck);
     $("undo").disabled = !state.canUndo || !!fallen;
@@ -942,7 +1002,7 @@ if (typeof module !== "undefined") module.exports = Twister;
     }
     const { limb, hold } = state.pending, from = state.pos[limb];
     const dx = hold.x - from.x, dy = hold.y - from.y;
-    const dir = ARROWS[(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 8) % 8];
+    const dir = ARROWS[dirIndex(dx, dy)];
     const cm = Math.round(Math.hypot(dx, dy) * 2.54);
     $("moveLabel").textContent = "Переставьте";
     $("limb").className = "limb"; $("limb").textContent = Twister.NAMES[limb];
@@ -952,10 +1012,19 @@ if (typeof module !== "undefined") module.exports = Twister;
       : "на зацепку цвета 2");
   }
 
-  function next() {
+  function next(silent) {
     if (calibrating) { calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; push(); return; }
     if (fallen) { restart(); return; }
+    const prevPhase = state.phase, prevDone = state.completed;
     state = game.next(); push(); wake();
+    if (silent) return;
+    const parts = [];
+    if (settings.climb && state.phase !== prevPhase) parts.push(state.phase === "down" ? "Наверху. Теперь вниз." : "Снова вверх.");
+    const done = state.completed, best = bestFor(settings.level);
+    if (done > prevDone && done % 10 === 0) parts.push(movesWord(done) + "!");
+    if (!recordSaid && best > 0 && done > best) { parts.push("Новый рекорд!"); recordSaid = true; }
+    parts.push(movePhrase(state));
+    voice.say(parts.join(" "));
   }
   function fell() {
     if (fallen || calibrating || !state.pending) return;
@@ -964,17 +1033,21 @@ if (typeof module !== "undefined") module.exports = Twister;
     fallen = { completed, best, record };
     log(`Сорвался: ${movesWord(completed)} на уровне «${LEVEL_SHORT[settings.level]}»` + (record ? ", новый рекорд" : ""));
     renderMove();
+    voice.say(`Игра окончена. ${movesWord(completed)}.` + (record && best > 0 ? " Новый рекорд!" : !record && best > 0 ? ` Рекорд — ${movesWord(best)}.` : ""));
   }
   function undo() { if (fallen) return; calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; state = game.undo(); push(); }
-  function restart() { fallen = null; game.setOptions(gameOptions()); state = game.start(); push(); }
+  function restart(silent) {
+    fallen = null; recordSaid = false; game.setOptions(gameOptions()); state = game.start(); push();
+    if (!silent) voice.say(movePhrase(state));
+  }
 
   let lock = null;
   async function wake() { try { if (!lock && navigator.wakeLock) { lock = await navigator.wakeLock.request("screen"); lock.addEventListener("release", () => (lock = null)); } } catch (e) {} }
 
   // ---------- wiring ----------
-  $("next").onclick = next;
+  $("next").onclick = () => next();
   $("undo").onclick = undo;
-  $("newGame").onclick = restart;
+  $("newGame").onclick = () => restart();
   $("fell").onclick = fell;
   $("connect").onclick = bleConnect;
   $("calib").onclick = () => {
@@ -1010,13 +1083,23 @@ if (typeof module !== "undefined") module.exports = Twister;
   for (const b of $("levelSeg").querySelectorAll("button")) b.onclick = () => {
     settings.level = b.dataset.level; save(); game.setOptions({ level: settings.level }); showLevel(); renderMove();
   };
+  function showVoice() {
+    for (const b of $("voiceSeg").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.voice === settings.voice));
+    voice.note();
+  }
+  for (const b of $("voiceSeg").querySelectorAll("button")) b.onclick = () => {
+    settings.voice = b.dataset.voice; save(); showVoice();
+    if (settings.voice === "off") voice.stop(); else voice.say(movePhrase(state));   // a sample right away
+  };
+  if (!["off", "short", "full"].includes(settings.voice)) settings.voice = "off";
+  showVoice();
   if (!LEVEL_TEXT[settings.level]) settings.level = "medium";
   showLevel();
   $("boltOnly").checked = settings.boltOnly;
   $("boltOnly").onchange = (e) => {
     settings.boltOnly = e.target.checked; save();
     game = Twister.create(playable(), gameOptions());
-    restart(); next();
+    restart(true); next();
   };
   $("bleApi").value = String(settings.bleApi);
   $("bleApi").onchange = (e) => {
@@ -1035,7 +1118,7 @@ if (typeof module !== "undefined") module.exports = Twister;
   applyColors();
   buildSwatches($("sw1"), "c1", "c2"); buildSwatches($("sw2"), "c2", "c1");
   // Open in a working state: start position plus the first move, so the preview shows 5 lit holds.
-  push(); next();
+  push(); next(true);   // opens on the first move, silently: speech needs a tap first
 })();
 </script>
 
