@@ -77,7 +77,8 @@ details.conn[open] > summary { margin-bottom: 12px; }
 .btn:hover:not(:disabled) { border-color: var(--muted); }
 .btn:disabled { opacity: .4; cursor: default; }
 .btn.fell:not(:disabled) { border-color: var(--danger); color: var(--danger); }
-.check > span { min-width: 0; }
+.checks { display: grid; gap: 12px; }
+label.check > span { min-width: 0; font-size: 1rem; color: var(--fg); letter-spacing: normal; line-height: 1.35; }
 
 .conn .status { display: flex; align-items: center; gap: 8px; font-size: .9rem; min-width: 0; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
@@ -100,7 +101,7 @@ details.card[open] > summary { margin-bottom: 12px; }
 .rangeval input { flex: 1; accent-color: var(--c2); }
 .rangeval output { font-variant-numeric: tabular-nums; min-width: 4.5em; text-align: right; }
 .check { display: flex; gap: 10px; align-items: center; cursor: pointer; }
-.check input { accent-color: var(--c2); width: 18px; height: 18px; }
+.check input { accent-color: var(--c2); width: 18px; height: 18px; flex: none; margin: 0; }
 select { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
 
 .log { font-family: var(--font-mono); font-size: .74rem; color: var(--muted); display: grid; gap: 6px; max-height: 220px; overflow: auto; }
@@ -173,14 +174,14 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
           <button type="button" data-level="hardcore" aria-pressed="false">Хардкор</button>
         </div>
         <p class="note" id="levelNote"></p></div>
+      <div class="field checks">
+        <label class="check"><input id="match" type="checkbox"> <span>Перехват: две руки или две ноги могут стоять на одной зацепке</span></label>
+        <label class="check"><input id="cross" type="checkbox"> <span>Разрешить скрещивать руки и ноги</span></label>
+        <label class="check"><input id="climb" type="checkbox"> <span>Подъём: ходы ведут вверх до верха стены, потом обратно вниз</span></label>
+        <label class="check"><input id="boltOnly" type="checkbox"> <span>На стене только болт-оны (без мелких скрю-онов)</span></label>
+      </div>
       <div class="field"><span>Цвет 1 — зацепки, на которых стоите</span><div class="swatches" id="sw1"></div></div>
       <div class="field"><span>Цвет 2 — новая зацепка</span><div class="swatches" id="sw2"></div></div>
-      <label class="check field"><input id="cross" type="checkbox"> Разрешить скрещивать руки и ноги</label>
-      <label class="check field"><input id="boltOnly" type="checkbox"> На стене только болт-оны (без мелких скрю-онов)</label>
-      <label class="check field"><input id="climb" type="checkbox"> <span>Подъём: ходы ведут вверх до верха стены, потом обратно вниз</span></label>
-      <label class="check field"><input id="match" type="checkbox"> <span>Перехват: две руки или две ноги могут стоять на одной зацепке</span></label>
-      <div class="field"><span>Версия протокола мока</span>
-        <select id="mockApi"><option value="3">API 3 (новые контроллеры)</option><option value="2">API 2 (старые)</option></select></div>
       <div class="field"><span>Проверка карты зацепок</span>
         <button class="btn" id="calib" type="button">Зажечь контрольный узор</button>
         <p class="note" id="calibNote">Сверьте стену с превью. Углы: <b style="color:#ff4040">красный</b> — левый верхний,
@@ -189,6 +190,8 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
           <b style="color:#40ffff">Голубой</b> — ровная диагональ под 45° от левого края над кикбордом до синего угла.
           Две строки из 8 цветов показывают все цвета из настроек: верхняя слева направо, нижняя — справа налево,
           в порядке кружков выбора цвета. Если стена отражена или узор сдвинут, напишите, что видите. «Дальше» вернёт игру.</p></div>
+      <div class="field"><span>Версия протокола мока</span>
+        <select id="mockApi"><option value="3">API 3 (новые контроллеры)</option><option value="2">API 2 (старые)</option></select></div>
     </details>
 
     <details class="card" id="logCard">
