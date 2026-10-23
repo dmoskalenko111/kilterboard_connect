@@ -800,6 +800,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   function fell() {
     if (fallen || calibrating || !state.pending) return;
     const key = levelKey(), completed = state.completed, best = bestFor(key), record = completed > best;
+    const shared = Math.max(0, ...settings.players.map((pl) => pl.best[key] || 0));   // best of all players, before this game
     const grades = routeGrades.filter((v) => v != null), grade = grades.length ? +Math.max(...grades).toFixed(1) : null;
     const date = Date.now();
     if (record) {
@@ -812,7 +813,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     fallen = { completed, best, record, key };
     log(`Сорвался: ${movesWord(completed)} на уровне «${levelName(key)}»` + (record ? ", новый рекорд" : ""));
     renderMove(); renderRecords();
-    voice.say(`Игра окончена. ${movesWord(completed)}.` + (record && best > 0 ? " Новый рекорд!" : !record && best > 0 ? ` Рекорд — ${movesWord(best)}.` : ""));
+    voice.say(`Игра окончена. ${movesWord(completed)}.` + (record && best > 0 ? " Новый рекорд!" : completed < shared ? ` Рекорд — ${movesWord(shared)}.` : ""));
   }
   function undo() { if (fallen) return; calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; state = game.undo(); route.pop(); routeGrades.pop(); push(); }
   function restart(silent) {
