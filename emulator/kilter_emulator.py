@@ -18,6 +18,7 @@ import asyncio
 import json
 import pathlib
 import queue
+import re
 import sys
 import threading
 import time
@@ -210,6 +211,7 @@ async def run_ble(name, events, stop, set_alias):
                              "Проверьте: включён ли Bluetooth (bluetoothctl power on) и запущена ли служба "
                              "(systemctl status bluetooth)."))
         return
+    baseline = await connected_devices(server)
     services = ", ".join(f"{s.UUID[:8]}…{' (основной)' if s.Primary else ' (вторичный!)'}" for s in server.app.services)
     events.put(("status", f"Реклама включена: «{name}». Сервисы: {services}. "
                           "Ищите её в приложении → «Стена» → «Подключить»."))
@@ -219,6 +221,15 @@ async def run_ble(name, events, stop, set_alias):
         while not stop.is_set():
             await asyncio.sleep(0.5)
     finally:
+        # A real board that is switched off drops the link, so the phone notices. Removing our GATT
+        # service alone would keep the link up, so disconnect the phone ourselves. Only devices that
+        # connected after start and are not paired: a Web Bluetooth phone never pairs, while headphones,
+        # mice and keyboards are paired and are left alone.
+        try:
+            for alias in await disconnect_new_clients(server, baseline):
+                print(f"Отключил телефон «{alias}», как при выключении стены", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"Не удалось разорвать соединение с телефоном ({e}); телефон заметит обрыв при следующей записи.", flush=True)
         try:
             await server.stop()
         except Exception:  # noqa: BLE001
@@ -231,6 +242,38 @@ async def run_ble(name, events, stop, set_alias):
                 print(f"Не удалось вернуть имя адаптера, выполните: bluetoothctl system-alias \"{original_alias['value']}\" ({e})")
 
 
+async def connected_devices(server, unpaired_only=False):
+    """[(object_path, alias)] of devices currently connected to our adapter."""
+    try:
+        root = server.bus.get_proxy_object("org.bluez", "/", await server.bus.introspect("org.bluez", "/"))
+        objs = await root.get_interface("org.freedesktop.DBus.ObjectManager").call_get_managed_objects()
+    except Exception:  # noqa: BLE001
+        return []
+    prefix = server.adapter.path + "/"
+    out = []
+    for path, ifaces in objs.items():
+        d = ifaces.get("org.bluez.Device1")
+        if not d or not path.startswith(prefix) or not d.get("Connected") or not d["Connected"].value:
+            continue
+        if unpaired_only and d.get("Paired") and d["Paired"].value:
+            continue
+        out.append((path, d["Alias"].value if d.get("Alias") else "?"))
+    return out
+
+
+async def disconnect_new_clients(server, baseline):
+    """Disconnect devices that connected after start and are not paired; return their names."""
+    before = {path for path, _ in baseline}
+    done = []
+    for path, alias in await connected_devices(server, unpaired_only=True):
+        if path in before:
+            continue
+        dev = server.bus.get_proxy_object("org.bluez", path, await server.bus.introspect("org.bluez", path))
+        await dev.get_interface("org.bluez.Device1").call_disconnect()
+        done.append(alias)
+    return done
+
+
 def ble_thread(name, events, stop, set_alias):
     asyncio.run(run_ble(name, events, stop, set_alias))
 
@@ -239,7 +282,8 @@ def ble_thread(name, events, stop, set_alias):
 class Core:
     """Shared message handling for GUI and terminal."""
 
-    def __init__(self, holds, out):
+    def __init__(self, holds, out, expected_api=None):
+        self.expected_api = expected_api  # None = accept both versions (lenient)
         self.by_led = {h["led"]: h for h in holds}
         self.stats = Stats()
         self.out = out  # out(kind, payload)
@@ -261,6 +305,12 @@ class Core:
         s.messages += 1
         took = (s.last_write - s.msg_start) * 1000 if s.msg_start is not None else 0
         s.msg_start = None
+        if self.expected_api and api != self.expected_api:
+            s.errors += 1
+            self.out("err", f"пакет API {api}, а эта стена понимает только API {self.expected_api}: "
+                            f"настоящая стена такое сообщение, скорее всего, не покажет. "
+                            f"Проверьте «Версию протокола стены» в приложении")
+            return
         lit, unknown = [], []
         for pos, color in placements:
             h = self.by_led.get(pos)
@@ -279,14 +329,14 @@ class Core:
         self.out("err", text)
 
 
-def run_terminal(holds, events, stop):
+def run_terminal(holds, events, stop, expected_api=None):
     def out(kind, payload):
         if kind == "frame":
             lit, api = payload
             print("   горят:", ", ".join(f"LED {h['led']} ({h['x']},{h['y']}) #{c}" for h, c in lit) or "ничего")
         else:
             print(("✗ " if kind == "err" else "") + payload, flush=True)
-    core = Core(holds, out)
+    core = Core(holds, out, expected_api)
     try:
         while True:
             ev = events.get()
@@ -307,7 +357,7 @@ def run_terminal(holds, events, stop):
         stop.set()
 
 
-def run_gui(holds, events, stop, title):
+def run_gui(holds, events, stop, title, expected_api=None):
     import tkinter as tk
     from tkinter import font as tkfont
 
@@ -380,7 +430,7 @@ def run_gui(holds, events, stop, title):
         st = core.stats
         counters.config(text=f"сообщений {st.messages} · кусков {st.writes} · байт {st.bytes} · ошибок {st.errors}")
 
-    core = Core(holds, out)
+    core = Core(holds, out, expected_api)
 
     def pump():
         try:
@@ -445,10 +495,19 @@ def main():
     ap.add_argument("--name", default="Emu@3", help="имя стены в рекламе; @3 или @2 = версия протокола (по умолчанию Emu@3)")
     ap.add_argument("--no-gui", action="store_true", help="без окна, журнал в терминал")
     ap.add_argument("--selftest", action="store_true", help="без Bluetooth: проверить окно и декодер на тестовых пакетах")
+    ap.add_argument("--lenient", action="store_true", help="принимать пакеты обеих версий протокола (по умолчанию только версию из имени)")
     ap.add_argument("--set-alias", action="store_true", help="на время работы сменить Bluetooth-имя ноутбука на --name (вернётся при выходе)")
     a = ap.parse_args()
     if len(a.name.encode()) > 8:
         print(f"Внимание: имя «{a.name}» длиннее 8 байт может не поместиться в рекламный пакет вместе с UUID.")
+
+    # Like the official app: "@3" at the end of the name means API 3, anything else means API 2.
+    m = re.search(r"@(\d+)$", a.name)
+    name_api = 3 if m and m.group(1) == "3" else 2
+    # The self-test deliberately mixes both versions, so it is always lenient.
+    expected = None if (a.lenient or a.selftest) else name_api
+    mode = "принимаю обе версии протокола" if expected is None else f"строгий режим: принимаю только API {expected}"
+    print(f"Эмулятор «{a.name}»: {mode}", flush=True)
 
     holds = load_holds()
     events, stop = queue.Queue(), threading.Event()
@@ -458,13 +517,13 @@ def main():
         threading.Thread(target=ble_thread, args=(a.name, events, stop, a.set_alias), daemon=False).start()
     try:
         if a.no_gui:
-            run_terminal(holds, events, stop)
+            run_terminal(holds, events, stop, expected)
         else:
             try:
-                run_gui(holds, events, stop, f"Эмулятор Kilter · {a.name}")
+                run_gui(holds, events, stop, f"Эмулятор Kilter · {a.name} · {mode}", expected)
             except Exception as e:  # noqa: BLE001  (no display / no tkinter)
                 print(f"Окно не открылось ({e}), продолжаю в терминале.")
-                run_terminal(holds, events, stop)
+                run_terminal(holds, events, stop, expected)
     finally:
         stop.set()
 

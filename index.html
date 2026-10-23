@@ -540,46 +540,107 @@ if (typeof module !== "undefined") module.exports = Twister;
   }, (err) => log("Мок: " + err, true));
 
   // ---------- Bluetooth wall ----------
+  // Lifecycle: connect (chooser) → attach (GATT) → send. A lost link (disconnect event or a failed
+  // confirmed write) starts automatic reconnection to the same device for up to a minute; on success
+  // the wall gets the current move again, so the game is never reset by a dropout.
   const ble = { device: null, char: null, nameApi: 2, sending: false, queued: null,
+    userClosed: false, reconnecting: false, reconnectStop: false, withListener: new WeakSet(),
     get api() { return settings.bleApi === "auto" ? this.nameApi : Number(settings.bleApi); } };
   const apiLabel = () => `API ${ble.api}` + (settings.bleApi === "auto" ? " (по имени)" : " (вручную)");
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const STEPS = { choose: "выбор устройства", connect: "соединение", service: "поиск UART-сервиса", char: "поиск характеристики записи" };
   function setConn(state, text) {
     $("dot").className = "dot" + (state === "on" ? " on" : state === "err" ? " err" : "");
     $("connText").textContent = text;
-    $("connect").textContent = ble.char ? "Отключить" : "Подключить стену";
+    $("connect").textContent = ble.char ? "Отключить" : ble.reconnecting ? "Остановить переподключение" : "Подключить стену";
     $("clear").disabled = !ble.char;
   }
+  const connectedText = () => `${(ble.device && ble.device.name) || "Стена"} · ${apiLabel()}`;
+
+  // GATT part of connecting; reused by reconnection. Errors carry the step and the server for diagnostics.
+  async function attach(device) {
+    let step = "connect", server = null;
+    try {
+      server = await device.gatt.connect();
+      step = "service";
+      const svc = await server.getPrimaryService(Aurora.UART_SERVICE);
+      step = "char";
+      const ch = await svc.getCharacteristic(Aurora.RX_CHARACTERISTIC);
+      ble.char = ch; ble.device = device; ble.nameApi = Aurora.apiFromName(device.name);
+      const p = ch.properties;
+      log("BLE: запись " + (p.write ? "с подтверждением последнего куска: обрыв будет замечен сразу"
+        : "без подтверждения: обрыв будет замечен только при разрыве связи"));
+    } catch (e) { e.auroraStep = step; e.auroraServer = server; throw e; }
+  }
+
+  function onDisconnected() {
+    ble.char = null;
+    if (ble.userClosed) { ble.userClosed = false; setConn("", "Отключено"); log("BLE: отключено по кнопке"); return; }
+    log("BLE: соединение разорвано", true);
+    startReconnect();
+  }
+
+  function handleLost(e) {
+    log(`BLE: стена не подтвердила запись (${(e && e.name) || "Error"}: ${(e && e.message) || e})`, true);
+    ble.char = null;
+    try { if (ble.device && ble.device.gatt.connected) ble.device.gatt.disconnect(); } catch (e2) {}
+    startReconnect();
+  }
+
+  async function startReconnect() {
+    if (ble.reconnecting || !ble.device) return;
+    ble.reconnecting = true; ble.reconnectStop = false;
+    const t0 = Date.now();
+    let n = 0;
+    while (!ble.reconnectStop && Date.now() - t0 < 60000) {
+      n++;
+      setConn("err", `Связь со стеной потеряна, переподключаюсь… (попытка ${n})`);
+      try {
+        await attach(ble.device);
+        ble.reconnecting = false;
+        setConn("on", connectedText());
+        log(`BLE: переподключено с ${n}-й попытки, отправляю текущий ход`);
+        push();
+        return;
+      } catch (e) {
+        log(`BLE: попытка ${n}: шаг «${STEPS[e.auroraStep] || "?"}»: ${e.name}: ${e.message}`, true);
+        try { if (ble.device.gatt.connected) ble.device.gatt.disconnect(); } catch (e2) {}
+      }
+      await sleep(2000);
+    }
+    ble.reconnecting = false;
+    if (ble.reconnectStop) setConn("", "Переподключение остановлено");
+    else {
+      setConn("err", "Стена не отвечает");
+      $("connNote").textContent = "За минуту переподключиться не удалось. Проверьте питание стены и нажмите «Подключить стену».";
+    }
+  }
+
   async function bleConnect() {
-    if (ble.char) { try { ble.device.gatt.disconnect(); } catch (e) {} return; }
+    if (ble.reconnecting) { ble.reconnectStop = true; return; }
+    if (ble.char) { ble.userClosed = true; try { ble.device.gatt.disconnect(); } catch (e) {} return; }
     if (!navigator.bluetooth) {
       setConn("err", "Bluetooth недоступен в этом браузере");
       $("connNote").innerHTML = "Откройте страницу в <b>Chrome</b> на Android или компьютере по адресу <code>https://…</code>. Во встроенном просмотре и в iPhone Web Bluetooth не работает; режим «Мок» работает везде.";
       return;
     }
-    // Each step is named so an error says where it happened. NotFoundError means "chooser cancelled"
-    // only at the first step; later it means the device lacks the expected service or characteristic.
-    const STEPS = { choose: "выбор устройства", connect: "соединение", service: "поиск UART-сервиса", char: "поиск характеристики записи" };
     let step = "choose", device = null, server = null;
     try {
       setConn("", "Выберите стену в списке…");
       device = await navigator.bluetooth.requestDevice({ filters: [{ services: [Aurora.ADVERTISED_SERVICE] }], optionalServices: [Aurora.UART_SERVICE] });
-      device.addEventListener("gattserverdisconnected", () => { ble.char = null; setConn("", "Стена отключилась"); log("BLE: отключено"); });
+      if (!ble.withListener.has(device)) { device.addEventListener("gattserverdisconnected", onDisconnected); ble.withListener.add(device); }
+      ble.device = device;
       step = "connect";
       setConn("", "Подключаюсь к " + (device.name || "стене") + "…");
       log(`BLE: выбрано «${device.name || "без имени"}», соединяюсь`);
-      server = await device.gatt.connect();
-      step = "service";
-      log("BLE: соединение есть, ищу сервисы");
-      const svc = await server.getPrimaryService(Aurora.UART_SERVICE);
-      step = "char";
-      ble.char = await svc.getCharacteristic(Aurora.RX_CHARACTERISTIC);
-      ble.device = device; ble.nameApi = Aurora.apiFromName(device.name);
-      setConn("on", `${device.name || "Стена"} · ${apiLabel()}`);
+      await attach(device);
+      setConn("on", connectedText());
       log(`BLE: подключено к «${device.name || "?"}», протокол ${apiLabel()}`);
       $("connNote").textContent = "Подключено. Если на стене горит не то, что на превью, нажмите «Проверка карты» в настройках.";
       push();
     } catch (e) {
       ble.char = null;
+      if (e && e.auroraStep) { step = e.auroraStep; server = e.auroraServer; }
       const name = (e && e.name) || "Error", msg = (e && e.message) || String(e);
       log(`BLE: ошибка на шаге «${STEPS[step]}»: ${name}: ${msg}`, true);
       if (step === "choose" && name === "NotFoundError") { setConn("", "Выбор отменён"); return; }
@@ -589,7 +650,7 @@ if (typeof module !== "undefined") module.exports = Twister;
         return;
       }
       setConn("err", `Ошибка: ${STEPS[step]} (${name})`);
-      if (step === "service" || step === "char") {
+      if ((step === "service" || step === "char") && server) {
         // Show what the phone does see on this device: helps tell a stale cache from a wrong device.
         try {
           const all = await server.getPrimaryServices();
@@ -601,9 +662,11 @@ if (typeof module !== "undefined") module.exports = Twister;
       } else {
         $("connNote").textContent = "Подробности — в «Журнале пакетов». Попробуйте подойти ближе и подключиться снова.";
       }
-      try { if (device && device.gatt.connected) device.gatt.disconnect(); } catch (e3) {}
+      ble.userClosed = true;   // this disconnect is ours, not a dropout to recover from
+      try { if (device && device.gatt.connected) device.gatt.disconnect(); else ble.userClosed = false; } catch (e3) { ble.userClosed = false; }
     }
   }
+
   async function bleSend(bytes) {
     ble.queued = bytes;                       // latest frame wins; skip stale ones
     if (ble.sending) return;
@@ -612,13 +675,17 @@ if (typeof module !== "undefined") module.exports = Twister;
       while (ble.queued && ble.char) {
         const b = ble.queued; ble.queued = null;
         const t0 = performance.now();
-        for (const c of Aurora.chunks(b)) {
-          if (ble.char.properties.writeWithoutResponse && ble.char.writeValueWithoutResponse) await ble.char.writeValueWithoutResponse(c);
-          else await ble.char.writeValue(c);
+        const ch = ble.char, p = ch.properties;
+        const parts = Aurora.chunks(b);
+        for (let i = 0; i < parts.length; i++) {
+          const confirm = p.write && i === parts.length - 1;   // one round trip per message proves the wall is alive
+          if (!confirm && p.writeWithoutResponse && ch.writeValueWithoutResponse) await ch.writeValueWithoutResponse(parts[i]);
+          else if (ch.writeValueWithResponse) await ch.writeValueWithResponse(parts[i]);
+          else await ch.writeValue(parts[i]);
         }
-        log(`BLE: ушло ${b.length} байт за ${Math.round(performance.now() - t0)} мс`);
+        log(`BLE: ушло ${b.length} байт за ${Math.round(performance.now() - t0)} мс` + (p.write ? ", стена подтвердила" : ""));
       }
-    } catch (e) { setConn("err", "Не удалось отправить: " + e.message); log("BLE: " + e.message, true); }
+    } catch (e) { handleLost(e); }
     finally { ble.sending = false; }
   }
 
