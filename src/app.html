@@ -596,7 +596,9 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     const a = n % 10, b = n % 100;
     return n + " " + (a === 1 && b !== 11 ? "ход" : a >= 2 && a <= 4 && (b < 12 || b > 14) ? "хода" : "ходов");
   };
-  const bestFor = (level) => cur().best[level] || 0;
+  const bestFor = (level) => cur().best[level] || 0;          // the selected player's own record
+  // Shared record of all players on a level, shown on the card, after a fall and in the voice: { n, pl }
+  const sharedBest = (level) => settings.players.reduce((a, pl) => ((pl.best[level] || 0) > a.n ? { n: pl.best[level], pl } : a), { n: 0, pl: null });
   let game = Twister.create(playable(), gameOptions());
   let state = game.start();
   let prevPos = null;
@@ -751,15 +753,16 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     $("undo").disabled = !state.canUndo || !!fallen;
     $("fell").disabled = !!fallen || calibrating || !state.pending;
     $("next").textContent = fallen ? "Заново" : "Дальше";
-    const best = bestFor(levelKey());
+    const best = sharedBest(levelKey()).n;
     $("stepNo").textContent = (state.step ? `ход ${state.step} · ` : "") + (best ? `рекорд ${best} · ` : "") + levelName(levelKey());
     $("moveLabel").textContent = cur().name;
     if (fallen) {
       $("stepNo").textContent = "результат · " + levelName(fallen.key);
       $("limb").className = "limb idle"; $("limb").textContent = movesWord(fallen.completed);
-      $("hint").innerHTML = fallen.record
-        ? (fallen.best ? `<b>Новый рекорд!</b> Прежний: ${movesWord(fallen.best)}.` : "<b>Первый результат на этом уровне.</b>")
-        : `Рекорд на этом уровне: <b>${movesWord(fallen.best)}</b>.`;
+      const sh = fallen.shared, who = sh.pl ? ` (${esc(sh.pl.name)})` : "";
+      $("hint").innerHTML = fallen.completed > sh.n
+        ? (sh.n ? `<b>Новый рекорд!</b> Прежний: ${movesWord(sh.n)}${who}.` : "<b>Первый результат на этом уровне.</b>")
+        : `Рекорд на этом уровне: <b>${movesWord(sh.n)}</b>${who}.`;
       return;
     }
     if (state.stuck) {
@@ -792,7 +795,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     if (silent) return;
     const parts = [];
     if (settings.climb && state.phase !== prevPhase) parts.push(state.phase === "down" ? "Наверху. Теперь вниз." : "Снова вверх.");
-    const done = state.completed, best = bestFor(levelKey());
+    const done = state.completed, best = sharedBest(levelKey()).n;
     if (!recordSaid && best > 0 && done > best) { parts.push("Новый рекорд!"); recordSaid = true; }
     parts.push(movePhrase(state));
     voice.say(parts.join(" "));
@@ -800,7 +803,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   function fell() {
     if (fallen || calibrating || !state.pending) return;
     const key = levelKey(), completed = state.completed, best = bestFor(key), record = completed > best;
-    const shared = Math.max(0, ...settings.players.map((pl) => pl.best[key] || 0));   // best of all players, before this game
+    const shared = sharedBest(key);   // best of all players, before this game
     const grades = routeGrades.filter((v) => v != null), grade = grades.length ? +Math.max(...grades).toFixed(1) : null;
     const date = Date.now();
     if (record) {
@@ -810,10 +813,10 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     }
     cur().games = [{ date, key, n: completed, grade, record }, ...cur().games].slice(0, 5);
     save();
-    fallen = { completed, best, record, key };
-    log(`Сорвался: ${movesWord(completed)} на уровне «${levelName(key)}»` + (record ? ", новый рекорд" : ""));
+    fallen = { completed, record, key, shared };
+    log(`Сорвался: ${movesWord(completed)} на уровне «${levelName(key)}»` + (completed > shared.n ? ", новый рекорд" : record ? ", личный рекорд" : ""));
     renderMove(); renderRecords();
-    voice.say(`Игра окончена. ${movesWord(completed)}.` + (record && best > 0 ? " Новый рекорд!" : completed < shared ? ` Рекорд — ${movesWord(shared)}.` : ""));
+    voice.say(`Игра окончена. ${movesWord(completed)}.` + (completed > shared.n ? (shared.n > 0 ? " Новый рекорд!" : "") : ` Рекорд — ${movesWord(shared.n)}.`));
   }
   function undo() { if (fallen) return; calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; state = game.undo(); route.pop(); routeGrades.pop(); push(); }
   function restart(silent) {
