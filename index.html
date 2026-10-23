@@ -742,7 +742,7 @@ if (typeof module !== "undefined") module.exports = Grade;
   ];
 
   // ---------- settings ----------
-  const defaults = { c1: "00FF00", c2: "FF00FF", allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, voice: "off", angle: 30, fine: false, fineLevel: 5, players: null, player: "guest" };
+  const defaults = { c1: "00FF00", c2: "FF00FF", allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, voice: "off", angle: 30, fine: false, fineLevel: 5, players: null, player: "guest", recView: "all" };
   const LEVEL_TEXT = {
     easy: "Короткие шаги, удобные зацепки под руки, только крупные зацепки, тело не растягивается сильно.",
     medium: "Шаги средней длины; ноги иногда на мелких зацепках для ног.",
@@ -1269,43 +1269,61 @@ if (typeof module !== "undefined") module.exports = Grade;
   const ddmm = (ms) => { const d = new Date(ms); return String(d.getDate()).padStart(2, "0") + "." + String(d.getMonth() + 1).padStart(2, "0"); };
   const LEVEL_TITLE = { easy: "Лёгкий", medium: "Средний", hard: "Сложный", hardcore: "Хардкор" };
   let recPick = null, recConfirm = false;
-  // details of one record: grade · angle · height · date + tags; records from before this version only have the count
-  function recMeta(key, withTags = true) {
-    const r = cur().records[key];
-    if (!r || r.n !== bestFor(key)) return "—";
+  // The block shows either the shared records (best of all players, with who holds each) or only the selected player's.
+  const recAll = () => settings.recView !== "me";
+  function recData() {
+    const list = recAll() ? settings.players : [cur()];
+    const best = {}, who = {};
+    for (const pl of list) for (const [k, n] of Object.entries(pl.best)) if (n > (best[k] || 0)) { best[k] = n; who[k] = pl; }
+    const games = list.flatMap((pl) => pl.games.map((g) => ({ ...g, pl }))).sort((x, y) => y.date - x.date).slice(0, 5);
+    return { best, who, games };
+  }
+  // details of one record: (player ·) grade · angle · height · date + tags
+  function recMeta(D, key) {
+    const pl = D.who[key], r = pl && pl.records[key];
+    const name = recAll() ? `<b>${esc(pl.name)}</b> · ` : "";
+    if (!r || r.n !== D.best[key]) return name + "—";
     const parts = [r.grade != null ? `<b>${Grade.label(r.grade).text}</b>` : "грейд —", r.angle + "°", r.height + " см", ddmm(r.date)];
-    return parts.join(" · ") + (withTags ? (r.tags || []).map((t) => `<span class="tag">${TAG_NAME[t] || esc(t)}</span>`).join("") : "");
+    return name + parts.join(" · ") + (r.tags || []).map((t) => `<span class="tag">${TAG_NAME[t] || esc(t)}</span>`).join("");
   }
   function renderRecords() {
-    const best = cur().best;
-    const keys = Object.keys(best).filter((k) => best[k] > 0);
+    const D = recData(), best = D.best, all = recAll();
+    const keys = Object.keys(best);
     if (recConfirm) {
-      $("recBody").innerHTML = `<p class="confirm-q">Удалить все рекорды и историю игр игрока «${esc(cur().name)}»?</p>
+      $("recBody").innerHTML = `<p class="confirm-q">${all ? "Удалить рекорды и историю игр всех игроков?" : `Удалить все рекорды и историю игр игрока «${esc(cur().name)}»?`}</p>
         <div class="row" style="margin-top:10px"><button class="btn warn" type="button" id="recYes">Удалить</button><button class="btn" type="button" id="recNo">Отмена</button></div>`;
-      $("recYes").onclick = () => { Object.assign(cur(), { best: {}, records: {}, games: [] }); save(); recConfirm = false; recPick = null; renderRecords(); renderMove(); };
+      $("recYes").onclick = () => {
+        for (const pl of all ? settings.players : [cur()]) Object.assign(pl, { best: {}, records: {}, games: [] });
+        save(); recConfirm = false; recPick = null; renderRecords(); renderMove();
+      };
       $("recNo").onclick = () => { recConfirm = false; renderRecords(); };
       return;
     }
+    const seg = `<div class="seg" role="group" aria-label="Чьи рекорды" id="recSeg" style="display:flex;margin-bottom:12px">
+      <button type="button" data-v="all" aria-pressed="${all}" style="flex:1 1 0;min-width:0">Общие</button>
+      <button type="button" data-v="me" aria-pressed="${!all}" style="flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(cur().name)}</button></div>`;
     const mainTop = Twister.MAIN_LEVELS.reduce((a, k) => ((best[k] || 0) > (best[a] || 0) ? k : a), Twister.MAIN_LEVELS[0]);
     const rows = Twister.MAIN_LEVELS.map((k) => best[k]
-      ? `<tr${k === mainTop ? ' class="top"' : ""}><td class="lv">${LEVEL_TITLE[k]}</td><td class="n">${best[k]}</td><td class="meta">${recMeta(k)}</td></tr>`
+      ? `<tr${k === mainTop ? ' class="top"' : ""}><td class="lv">${LEVEL_TITLE[k]}</td><td class="n">${best[k]}</td><td class="meta">${recMeta(D, k)}</td></tr>`
       : `<tr><td class="lv">${LEVEL_TITLE[k]}</td><td class="n none">—</td><td class="meta">ещё не играли</td></tr>`).join("");
     const fineTop = Twister.FINE_LEVELS.reduce((a, k) => ((best[k] || 0) > (best[a] || 0) ? k : a), "d1");
     const cells = Twister.FINE_LEVELS.map((k, i) => {
       const cls = [best[k] ? "" : "empty", best[k] && k === fineTop ? "top" : ""].filter(Boolean).join(" ");
       return `<button type="button" data-k="${k}" class="${cls}" aria-pressed="${k === recPick}"><span class="l">${i + 1}</span><span class="v">${best[k] || "—"}</span></button>`;
     }).join("");
-    const pick = recPick ? (best[recPick] ? `Уровень ${recPick.slice(1)}: <b>${movesWord(best[recPick])}</b> · ${recMeta(recPick)}` : `Уровень ${recPick.slice(1)}: ещё не играли`)
+    const pick = recPick ? (best[recPick] ? `Уровень ${recPick.slice(1)}: <b>${movesWord(best[recPick])}</b> · ${recMeta(D, recPick)}` : `Уровень ${recPick.slice(1)}: ещё не играли`)
       : "Нажмите на уровень, чтобы увидеть подробности.";
-    const games = cur().games.map((g) => `<div><span>${ddmm(g.date)} · ${levelName(g.key)}</span>` +
+    const games = D.games.map((g) => `<div><span>${ddmm(g.date)} · ${all ? esc(g.pl.name) + " · " : ""}${levelName(g.key)}</span>` +
       (g.record ? `<span class="rec"><b>${movesWord(g.n)}</b> · рекорд</span>` : `<span><b>${movesWord(g.n)}</b>${g.grade != null ? " · " + Grade.label(g.grade).text : ""}</span>`) + "</div>").join("")
       || '<div><span>Пока нет сыгранных игр.</span></div>';
-    $("recBody").innerHTML = `<div class="rec-sub">Игрок: ${esc(cur().name)}</div><div class="rec-sub">Уровни</div><table class="rec-tbl">${rows}</table>
+    $("recBody").innerHTML = seg + `<div class="rec-sub">Уровни</div><table class="rec-tbl">${rows}</table>
       <div class="rec-sub">Подробная шкала</div><div class="grid10">${cells}</div><p class="rec-detail" id="recDetail">${pick}</p>
       <div class="rec-sub">Последние игры</div><div class="last">${games}</div>
-      <div class="row" style="margin-top:12px"><button class="btn warn" type="button" id="recReset"${keys.length || cur().games.length ? "" : " disabled"}>Сбросить рекорды</button></div>
-      <p class="note" style="margin-top:10px">Рекорды хранятся только в этом телефоне, у каждого игрока свои. В строке рекорда — самый трудный отрезок той игры, угол стены, рост и дата;
+      <div class="row" style="margin-top:12px"><button class="btn warn" type="button" id="recReset"${keys.length || D.games.length ? "" : " disabled"}>${all ? "Сбросить все рекорды" : "Сбросить рекорды игрока"}</button></div>
+      <p class="note" style="margin-top:10px">${all ? "Общие — лучший результат среди всех игроков, с именем того, кто его поставил; «рекорд» в последних играх — личный рекорд игрока." : "Только рекорды и игры выбранного игрока."}
+        Рекорды хранятся только в этом телефоне. В строке рекорда — самый трудный отрезок той игры, угол стены, рост и дата;
         метки показывают включённые «Подъём», «Перехват» и «Скрещивание».</p>`;
+    for (const b of $("recBody").querySelectorAll("#recSeg button")) b.onclick = () => { settings.recView = b.dataset.v; save(); renderRecords(); };
     for (const b of $("recBody").querySelectorAll(".grid10 button")) b.onclick = () => { recPick = recPick === b.dataset.k ? null : b.dataset.k; renderRecords(); };
     $("recReset").onclick = () => { recConfirm = true; renderRecords(); };
   }
