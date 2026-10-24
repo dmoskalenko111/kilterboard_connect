@@ -31,6 +31,11 @@ const Twister = (() => {
   // Lowest hand at least this fraction of height above the highest foot: keeps the body extended,
   // no "hand next to the knee" crouches.
   const HANDS_ABOVE_FEET = 0.35;
+  // Crossed limbs reach less far apart: lying across the body, two arms span about arm + arm − shoulders
+  // (≈ 0.55 of height with straight arms), not the full span. Sideways spread of crossed hands is capped at
+  // CROSS_HANDS of height and crossed feet at CROSS_FEET, easing into the normal limit as the limbs get
+  // more one-above-the-other (an ellipse: wide sideways, the usual reach up and down).
+  const CROSS_HANDS = 0.5, CROSS_FEET = 0.4, CROSS_SLACK = 6;
   // Wall heights in inches (12x12 board: hand holds up to 152).
   const CLIMB_TOP = 136;              // climb mode turns down when a hand reaches this height
   const CLIMB_BOTTOM_OFFSET = 16;     // ...and up again near the start height
@@ -90,12 +95,25 @@ const Twister = (() => {
       const ok = (l, x) => (isHand(l) ? handHold(x) && x.y >= 24 : !L().feetBigOnly || handHold(x));
       const cx = 72 + (rng() - 0.5) * 24;
       // Feet together low, hands shoulder-width at about chest height: a relaxed start for any level.
-      const plan = { LF: [cx - 7, 8], RF: [cx + 7, 8], LH: [cx - 0.16 * h, 8 + 0.75 * h], RH: [cx + 0.16 * h, 8 + 0.75 * h] };
-      pos = {};
-      for (const l of ["LF", "RF", "LH", "RH"]) {
-        const hold = nearest(plan[l][0], plan[l][1], used, (x) => ok(l, x));
-        pos[l] = hold; used.add(hold.id);
+      // Short-bodied levels (1–2) may not reach that high: the hands come lower until the stance fits the level.
+      // If the nearest holds still don't fit (feet too far apart on a sparse row), the stance shifts sideways.
+      const place = (x0, up) => {
+        const plan = { LF: [x0 - 7, 8], RF: [x0 + 7, 8], LH: [x0 - 0.16 * h, 8 + up * h], RH: [x0 + 0.16 * h, 8 + up * h] };
+        const p = {}; used.clear();
+        for (const l of ["LF", "RF", "LH", "RH"]) {
+          const hold = nearest(plan[l][0], plan[l][1], used, (x) => ok(l, x));
+          p[l] = hold; used.add(hold.id);
+        }
+        return p;
+      };
+      pos = null;
+      search: for (const shift of [0, 8, -8, 16, -16, 24, -24]) {
+        for (let up = 0.75; up > HANDS_ABOVE_FEET; up -= 0.05) {
+          const p = place(cx + shift, up);
+          if (stanceOk(p)) { pos = p; break search; }
+        }
       }
+      if (!pos) pos = place(cx, 0.75);   // nothing fits this level: the usual stance (never seen on this wall)
       pending = null; lastLimb = null; history = []; step = 0; phase = "up"; moveCount = 0; matchCount = 0;
       return snapshot();
     }
@@ -106,7 +124,11 @@ const Twister = (() => {
       const d = dist(pos[limb], c);
       if (d < lv.minMove * h || d > reach) return false;
       if (isHand(limb) ? !(handHold(c) || (lv.handAltRate && c.handAlt)) : lv.feetBigOnly && !handHold(c)) return false;
-      const np = { ...pos, [limb]: c };
+      return stanceOk({ ...pos, [limb]: c });
+    }
+    // Does a whole stance fit the body at this level?
+    function stanceOk(np) {
+      const h = H(), lv = L();
       if (np.LH.y < 24 || np.RH.y < 24) return false;                         // no hands on kickboard
       if (Math.min(np.LH.y, np.RH.y) - Math.max(np.LF.y, np.RF.y) < HANDS_ABOVE_FEET * h) return false; // hands clearly above feet
       if (dist(np.LH, np.RH) > lv.hands * h) return false;                     // arm span
@@ -114,7 +136,16 @@ const Twister = (() => {
       for (const hand of [np.LH, np.RH]) for (const foot of [np.LF, np.RF]) {
         if (dist(hand, foot) > lv.body * h) return false;                      // hand to foot, diagonals included
       }
-      if (!opt.allowCross && (np.LH.x > np.RH.x + 6 || np.LF.x > np.RF.x + 6)) return false;
+      if (!opt.allowCross && (np.LH.x > np.RH.x + CROSS_SLACK || np.LF.x > np.RF.x + CROSS_SLACK)) return false;
+      if (opt.allowCross) {
+        const crossedOk = (l, r, side, limit) => {
+          const dx = l.x - r.x;
+          if (dx <= CROSS_SLACK) return true;
+          const dy = l.y - r.y;
+          return (dx / (side * h)) ** 2 + (dy / (limit * h)) ** 2 <= 1;
+        };
+        if (!crossedOk(np.LH, np.RH, CROSS_HANDS, lv.hands) || !crossedOk(np.LF, np.RF, CROSS_FEET, lv.feet)) return false;
+      }
       const midHands = (np.LH.x + np.RH.x) / 2, midFeet = (np.LF.x + np.RF.x) / 2;
       if (Math.abs(midHands - midFeet) > lv.lean * h) return false;           // don't lean too far sideways
       return true;
@@ -236,6 +267,6 @@ const Twister = (() => {
     return { start, next, undo, snapshot, setOptions, get options() { return { ...opt }; } };
   }
 
-  return { create, LIMBS, NAMES, LEVELS, ANATOMY, MAIN_LEVELS, FINE_LEVELS };
+  return { create, LIMBS, NAMES, LEVELS, ANATOMY, MAIN_LEVELS, FINE_LEVELS, CROSS_HANDS, CROSS_FEET, CROSS_SLACK };
 })();
 if (typeof module !== "undefined") module.exports = Twister;

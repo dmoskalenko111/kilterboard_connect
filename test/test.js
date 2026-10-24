@@ -233,7 +233,9 @@ t("twister: high on the wall, moves go down more often than up; climb mode does 
     }
     runs.sort((a, b) => a - b);
     const median = (runs[3] + runs[4]) / 2;
-    assert.ok(median <= 24, `${level}: stayed high for ${runs.join(",")} moves in a row`);
+    // levels with shorter moves (1–2) need more of them to come back down
+    const allowed = 24 * Math.max(1, Twister.LEVELS.easy.reach / Twister.LEVELS[level].reach);
+    assert.ok(median <= allowed, `${level}: stayed high for ${runs.join(",")} moves in a row`);
   }
 });
 
@@ -315,6 +317,39 @@ t("grade: estimate rises with level and wall angle, and maps to Font/V", () => {
   assert.deepStrictEqual(Grade.label(19.6), { font: "6c", v: "V5", text: "6c / V5" });
   assert.strictEqual(Grade.label(null), null);
   console.log("    медианная оценка при 40°:", Twister.MAIN_LEVELS.map((l, i) => l + " " + Grade.label(at40[i]).text).join(", "));
+});
+
+t("crossing: crossed hands and feet stay within the crossed reach, crossings still happen, never stuck", () => {
+  const bolts = holds.filter((h) => h.set === 1);
+  for (const level of Object.keys(Twister.LEVELS)) for (const heightCm of [140, 165, 190, 205]) for (const pool of [holds, bolts]) {
+    const h = heightCm / 2.54, L = Twister.LEVELS[level];
+    let crossed = 0, n = 0;
+    for (let g = 0; g < 3; g++) {
+      const game = Twister.create(pool, { level, heightCm, allowCross: true, climb: g === 2 }, rng(heightCm * 11 + g * 101 + level.length));
+      game.start();
+      for (let i = 0; i < 200; i++) {
+        const s = game.next();
+        assert.ok(!s.stuck, `${level} ${heightCm}cm cross stuck at ${i}`);
+        const p = { ...s.pos, [s.pending.limb]: s.pending.hold }; n++;
+        for (const [a, b, side, lim] of [[p.LH, p.RH, Twister.CROSS_HANDS, L.hands], [p.LF, p.RF, Twister.CROSS_FEET, L.feet]]) {
+          const dx = a.x - b.x, dy = a.y - b.y;
+          if (dx > Twister.CROSS_SLACK) {
+            crossed++;
+            assert.ok((dx / (side * h)) ** 2 + (dy / (lim * h)) ** 2 <= 1 + 1e-9, `${level} ${heightCm}cm crossed too wide: dx ${dx} dy ${dy}`);
+            assert.ok(dx <= side * h + 1e-9);
+          }
+        }
+      }
+    }
+    assert.ok(crossed > n * 0.1, `${level} ${heightCm}cm: crossings should still happen (${crossed}/${n})`);
+  }
+});
+
+t("start: every level and height gets a stance that has a first move", () => {
+  for (const level of Object.keys(Twister.LEVELS)) for (const heightCm of [140, 150, 165, 175, 190, 205]) for (let g = 0; g < 20; g++) {
+    const game = Twister.create(holds, { level, heightCm }, rng(g * 977 + heightCm)); game.start();
+    assert.ok(!game.next().stuck, `${level} ${heightCm}cm seed ${g}: no first move`);
+  }
 });
 
 t("fine scale: 3/5/7/9 equal the four levels; difficulty rises from 1 to 10", () => {
