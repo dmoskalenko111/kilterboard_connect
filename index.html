@@ -272,6 +272,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
         <label class="check" style="margin-top:6px"><input id="timerShow" type="checkbox"> <span>Отображать таймер</span></label>
         <p class="note">Отсчёт начинается с «Начать»; в ноль игра заканчивается, как после «Сорвался». Зацепки таймер не переключает.
           «Отображать таймер» показывает оставшееся время цифрами в правом верхнем углу стены (цветом счёта).</p></div>
+      <div class="field checks"><label class="check"><input id="score" type="checkbox"> <span>Отображать счёт</span></label></div>
       <div class="field"><span>Озвучка</span>
         <div class="seg" role="group" aria-label="Озвучка" id="voiceSeg">
           <button type="button" data-voice="off" aria-pressed="true">Выкл</button>
@@ -281,7 +282,6 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
         <p class="note" id="voiceNote"></p></div>
       <div class="field"><span>Цвет 1 — зацепки, на которых стоите</span><div class="swatches" id="sw1"></div></div>
       <div class="field"><span>Цвет 2 — новая зацепка</span><div class="swatches" id="sw2"></div></div>
-      <div class="field checks"><label class="check"><input id="score" type="checkbox"> <span>Отображать счёт</span></label></div>
       <div class="field" id="sw3Row"><span>Цвет счёта и таймера на стене</span><div class="swatches" id="sw3"></div></div>
       <div class="field"><span>Проверка карты зацепок</span>
         <button class="btn" id="calib" type="button">Зажечь контрольный узор</button>
