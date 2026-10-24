@@ -146,6 +146,8 @@ details.card[open] > summary { margin-bottom: 12px; }
 .field > span { font-size: .8rem; color: var(--muted); letter-spacing: .04em; }
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
 .sw { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; }
+.sw:disabled { opacity: .3; cursor: default; }
+#sw3Row.off { opacity: .45; }
 .sw[aria-pressed="true"] { border-color: var(--fg); box-shadow: 0 0 0 3px var(--bg) inset; }
 .rangeval { display: flex; align-items: center; gap: 10px; }
 .rangeval input { flex: 1; accent-color: var(--c2); }
@@ -249,6 +251,8 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
         <p class="note" id="voiceNote"></p></div>
       <div class="field"><span>Цвет 1 — зацепки, на которых стоите</span><div class="swatches" id="sw1"></div></div>
       <div class="field"><span>Цвет 2 — новая зацепка</span><div class="swatches" id="sw2"></div></div>
+      <div class="field checks"><label class="check"><input id="score" type="checkbox"> <span>Отображать счёт</span></label></div>
+      <div class="field" id="sw3Row"><span>Цвет счёта — две цифры в левом верхнем углу стены</span><div class="swatches" id="sw3"></div></div>
       <div class="field"><span>Проверка карты зацепок</span>
         <button class="btn" id="calib" type="button">Зажечь контрольный узор</button>
         <p class="note" id="calibNote">Сверьте стену с превью. Углы: <b style="color:#ff4040">красный</b> — левый верхний,
@@ -302,7 +306,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   ];
 
   // ---------- settings ----------
-  const defaults = { c1: "00FF00", c2: "FF00FF", allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, voice: "off", angle: 30, fine: false, fineLevel: 5, players: null, player: "guest", recView: "all" };
+  const defaults = { c1: "00FF00", c2: "FF00FF", allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, voice: "off", angle: 30, fine: false, fineLevel: 5, players: null, player: "guest", recView: "all", score: false, c3: "FFFFFF" };
   const LEVEL_TEXT = {
     easy: "Короткие шаги, удобные зацепки под руки, только крупные зацепки, тело не растягивается сильно.",
     medium: "Шаги средней длины; ноги иногда на мелких зацепках для ног.",
@@ -362,13 +366,32 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       b.setAttribute("aria-pressed", String(settings[key] === hex));
       b.onclick = () => {
         if (settings[otherKey] === hex) settings[otherKey] = settings[key]; // swap instead of making both equal
-        settings[key] = hex; save(); applyColors();
-        buildSwatches($("sw1"), "c1", "c2"); buildSwatches($("sw2"), "c2", "c1");
+        settings[key] = hex; fixScoreColor(); save(); applyColors();
+        buildAllSwatches();
         push();
       };
       el.appendChild(b);
     }
   }
+  // Score colour: any palette colour except colours 1 and 2; if one of them takes it, the score moves to the first free one.
+  function fixScoreColor() {
+    if (settings.c3 === settings.c1 || settings.c3 === settings.c2 || !PALETTE.some(([h]) => h === settings.c3))
+      settings.c3 = PALETTE.map(([h]) => h).find((h) => h !== settings.c1 && h !== settings.c2);
+  }
+  function buildScoreSwatches() {
+    const el = $("sw3"); el.innerHTML = "";
+    for (const [hex, name] of PALETTE) {
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "sw"; b.style.background = "#" + hex;
+      b.title = name; b.setAttribute("aria-label", name);
+      b.setAttribute("aria-pressed", String(settings.c3 === hex));
+      b.disabled = !settings.score || hex === settings.c1 || hex === settings.c2;
+      b.onclick = () => { settings.c3 = hex; save(); buildScoreSwatches(); push(); };
+      el.appendChild(b);
+    }
+    $("sw3Row").classList.toggle("off", !settings.score);
+  }
+  function buildAllSwatches() { buildSwatches($("sw1"), "c1", "c2"); buildSwatches($("sw2"), "c2", "c1"); buildScoreSwatches(); }
 
   // ---------- wall drawing ----------
   const wall = $("wall");
@@ -638,6 +661,24 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     return [...out.values()];
   }
 
+  // ---------- score: completed moves as two 3×5 digits on the bolt-ons of the top-left corner ----------
+  // Drawn under the game: a game hold on the same LED keeps its game colour. Max 99. Does not affect the game.
+  const DIGITS = {
+    0: ["###", "#.#", "#.#", "#.#", "###"], 1: [".#.", "##.", ".#.", ".#.", "###"], 2: ["###", "..#", "###", "#..", "###"],
+    3: ["###", "..#", ".##", "..#", "###"], 4: ["#.#", "#.#", "###", "..#", "..#"], 5: ["###", "#..", "###", "..#", "###"],
+    6: ["###", "#..", "###", "#.#", "###"], 7: ["###", "..#", ".#.", ".#.", ".#."], 8: ["###", "#.#", "###", "#.#", "###"],
+    9: ["###", "#.#", "###", "..#", "###"],
+  };
+  const boltAt = new Map(holds.filter((h) => h.set === 1).map((h) => [h.x + "," + h.y, h]));
+  function scorePlacements(n) {
+    const v = Math.min(99, Math.max(0, n)), out = [];
+    [Math.floor(v / 10), v % 10].forEach((d, i) => DIGITS[d].forEach((row, r) => [...row].forEach((c, k) => {
+      const h = c === "#" && boltAt.get(8 + 32 * i + 8 * k + "," + (152 - 8 * r));
+      if (h) out.push({ position: h.led, color: settings.c3 });
+    })));
+    return out;
+  }
+
   function push() {
     if (calibrating) {
       const pat = calibrationPattern();
@@ -660,7 +701,9 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       currentLabels.set(l.hold.led, { label: [...limbs, ...(nl ? [nl] : [])].join("+"), isNew: l.role === "new" });
     }
     currentArrow = state.pending ? { from: state.pos[state.pending.limb], to: state.pending.hold } : null;
-    const placements = state.lit.map((l) => ({ position: l.hold.led, color: l.role === "new" ? settings.c2 : settings.c1 }));
+    const game = state.lit.map((l) => ({ position: l.hold.led, color: l.role === "new" ? settings.c2 : settings.c1 }));
+    const taken = new Set(game.map((g) => g.position));
+    const placements = [...(settings.score ? scorePlacements(state.completed).filter((p) => !taken.has(p.position)) : []), ...game];
     const bytes = Aurora.encode(placements, api());
     log(`→ ${placements.length} зацепок, ${bytes.length} байт, ${Math.ceil(bytes.length / 20)} BLE-кусок: <span>${hex(bytes)}</span>`);
     decoder.reset();
@@ -1065,8 +1108,11 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     else if (e.key === "Backspace" || e.key === "ArrowLeft") { e.preventDefault(); undo(); }
   });
 
+  settings.score = !!settings.score; fixScoreColor();
+  $("score").checked = settings.score;
+  $("score").onchange = (e) => { settings.score = e.target.checked; save(); buildScoreSwatches(); push(); };
   applyColors();
-  buildSwatches($("sw1"), "c1", "c2"); buildSwatches($("sw2"), "c2", "c1");
+  buildAllSwatches();
   // Open in a working state: start position plus the first move, so the preview shows 5 lit holds.
   push(); next(true);   // opens on the first move, silently: speech needs a tap first
 })();
