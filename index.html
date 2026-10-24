@@ -70,8 +70,7 @@ details.conn[open] > summary { margin-bottom: 12px; }
 /* The move card keeps one height whatever it says, so «Дальше» never jumps: the command is always
    one line sized to the card width (not the window), the eyebrow is one line, the hint has two lines reserved. */
 .move { display: grid; gap: 4px; container-type: inline-size; }
-/* name and level: the same face as the bold distance in the hint («48 см») */
-.move .eyebrow { font-size: .92rem; line-height: 1.4; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; min-width: 0; }
+.move .eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); align-items: baseline; line-height: 1.4; display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; min-width: 0; }
 .move .eyebrow > span { overflow: hidden; text-overflow: ellipsis; }
 .move .limb { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.6rem, 11cqi, 3.1rem); line-height: 1.05; height: 1.05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; letter-spacing: .01em; color: var(--c2); }
 .move .limb.idle { color: var(--c1); }
@@ -127,6 +126,8 @@ details.card > summary .sumr { margin-left: auto; color: var(--muted); font-weig
 .btn.warn { color: var(--danger); border-color: var(--danger); }
 .confirm-q { font-weight: 600; margin: 12px 0 0; }
 #stepNo { flex: none; }
+/* player name and level: the same face as the bold distance in the hint («48 см») */
+.move .eyebrow .em { font-size: .92rem; font-weight: 600; color: var(--fg); text-transform: none; letter-spacing: normal; }
 /* players */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; background: transparent; cursor: pointer; font-size: .9rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -202,7 +203,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
 
   <div class="controls">
     <div class="card move" id="move" aria-live="polite">
-      <div class="eyebrow"><span id="moveLabel">Старт</span><span id="stepNo"></span></div>
+      <div class="eyebrow"><span id="moveLabel" class="em">Старт</span><span id="stepNo"></span></div>
       <div class="limb idle" id="limb">На старт</div>
       <div class="hint" id="hint">Зацепки цвета 1: руки сверху, ноги снизу.</div>
       <div class="grade" id="grade" title="Оценка по последним 8 ходам: грейды реальных трасс на этих зацепках, длина ходов, растяжки и угол стены. Ориентир, не измерение.">&nbsp;</div>
@@ -1240,10 +1241,11 @@ if (typeof module !== "undefined") module.exports = Grade;
     $("fell").disabled = !!fallen || calibrating || !state.pending;
     $("next").textContent = fallen ? "Заново" : "Дальше";
     const best = sharedBest(levelKey()).n;
-    $("stepNo").textContent = (state.step ? `ход ${state.step} · ` : "") + (best ? `рекорд ${best} · ` : "") + levelName(levelKey());
+    const lv = (key) => `<b class="em">${key[0] === "d" ? "Ур. " + key.slice(1) : LEVEL_TITLE[key]}</b>`;   // level on the card
+    $("stepNo").innerHTML = (state.step ? `ход ${state.step} · ` : "") + (best ? `рекорд ${best} · ` : "") + lv(levelKey());
     $("moveLabel").textContent = cur().name;
     if (fallen) {
-      $("stepNo").textContent = "результат · " + levelName(fallen.key);
+      $("stepNo").innerHTML = "результат · " + lv(fallen.key);
       $("limb").className = "limb idle"; $("limb").textContent = movesWord(fallen.completed);
       const sh = fallen.shared, who = sh.pl ? ` (${esc(sh.pl.name)})` : "";
       $("hint").innerHTML = fallen.completed > sh.n
