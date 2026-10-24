@@ -1554,7 +1554,7 @@ if (typeof module !== "undefined") module.exports = Grade;
   $("modeMock").onclick = () => setMode("mock");
   $("modeBle").onclick = () => setMode("ble");
   $("angle").value = settings.angle; $("angleOut").textContent = settings.angle + "°";
-  $("angle").oninput = (e) => { settings.angle = +e.target.value; $("angleOut").textContent = settings.angle + "°"; save(); routeRecompute(); renderGrade(); showFineNote(); showSetSum(); };
+  $("angle").oninput = (e) => { settings.angle = +e.target.value; $("angleOut").textContent = settings.angle + "°"; save(); routeRecompute(); renderGrade(); showLevel(); };
   $("climb").checked = !!settings.climb;
   $("climb").onchange = (e) => { settings.climb = e.target.checked; save(); game.setOptions({ climb: settings.climb }); };
   // «Сдваиваться на мелких» only matters with matching on, so it is greyed out without it.
@@ -1595,7 +1595,8 @@ if (typeof module !== "undefined") module.exports = Grade;
       b.setAttribute("aria-pressed", String(settings.fine && +b.dataset.fine === settings.fineLevel)); b.disabled = !settings.fine;
     }
     $("fine").checked = settings.fine;
-    $("levelNote").textContent = settings.fine ? "Выбрана подробная шкала: уровень от 1 до 10 ниже." : LEVEL_TEXT[settings.level] + APPLIES;
+    $("levelNote").textContent = settings.fine ? "Выбрана подробная шкала: уровень от 1 до 10 ниже."
+      : `${LEVEL_TEXT[settings.level]} Примерно ${Grade.levelLabel("d" + FINE_FROM[settings.level], settings.angle).text} при угле ${settings.angle}°.` + APPLIES;
     showFineNote();
   }
   function levelChanged() { save(); game.setOptions({ level: levelKey() }); showLevel(); renderMove(); }
