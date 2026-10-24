@@ -62,7 +62,8 @@ details.conn[open] > summary { margin-bottom: 12px; }
 /* The move card keeps one height whatever it says, so «Дальше» never jumps: the command is always
    one line sized to the card width (not the window), the eyebrow is one line, the hint has two lines reserved. */
 .move { display: grid; gap: 4px; container-type: inline-size; }
-.move .eyebrow { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; min-width: 0; }
+/* name and level: the same face as the bold distance in the hint («48 см») */
+.move .eyebrow { font-size: .92rem; line-height: 1.4; font-weight: 600; color: var(--fg); font-variant-numeric: tabular-nums; display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; min-width: 0; }
 .move .eyebrow > span { overflow: hidden; text-overflow: ellipsis; }
 .move .limb { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.6rem, 11cqi, 3.1rem); line-height: 1.05; height: 1.05em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; letter-spacing: .01em; color: var(--c2); }
 .move .limb.idle { color: var(--c1); }
@@ -221,7 +222,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     </details>
 
     <details class="card" id="settings">
-      <summary>Настройки</summary>
+      <summary><span>Настройки</span><span class="sumr" id="setSum"></span></summary>
       <div class="field"><span>Угол стены (для оценки грейда)</span>
         <div class="rangeval"><input id="angle" type="range" min="0" max="70" step="5" value="30"><output id="angleOut">30°</output></div></div>
       <div class="field"><span>Сложность</span>
@@ -1029,7 +1030,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   $("modeMock").onclick = () => setMode("mock");
   $("modeBle").onclick = () => setMode("ble");
   $("angle").value = settings.angle; $("angleOut").textContent = settings.angle + "°";
-  $("angle").oninput = (e) => { settings.angle = +e.target.value; $("angleOut").textContent = settings.angle + "°"; save(); routeRecompute(); renderGrade(); showFineNote(); };
+  $("angle").oninput = (e) => { settings.angle = +e.target.value; $("angleOut").textContent = settings.angle + "°"; save(); routeRecompute(); renderGrade(); showFineNote(); showSetSum(); };
   $("climb").checked = !!settings.climb;
   $("climb").onchange = (e) => { settings.climb = e.target.checked; save(); game.setOptions({ climb: settings.climb }); };
   // «Сдваиваться на мелких» only matters with matching on, so it is greyed out without it.
@@ -1058,7 +1059,11 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     $("fineNote").textContent = `Уровень ${n} · примерно ${g.text} при угле ${settings.angle}°` +
       (same ? ` (как «${same}»)` : n < 3 ? " (проще лёгкого)" : n === 10 ? " (труднее хардкора, на грани возможностей)" : "") + "." + APPLIES;
   }
+  function showSetSum() {
+    $("setSum").textContent = (settings.fine ? "Ур. " + settings.fineLevel : LEVEL_TITLE[settings.level]) + " · " + settings.angle + "°";
+  }
   function showLevel() {
+    showSetSum();
     for (const b of $("levelSeg").querySelectorAll("button")) {
       b.setAttribute("aria-pressed", String(!settings.fine && b.dataset.level === settings.level)); b.disabled = settings.fine;
     }
