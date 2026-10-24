@@ -83,7 +83,16 @@ details.conn[open] > summary { margin-bottom: 12px; }
 .next { width: 100%; border: 0; border-radius: 16px; padding: 22px 16px; cursor: pointer; background: var(--c2); color: var(--c2-ink);
   font-family: var(--font-display); font-weight: 700; font-size: 2rem; letter-spacing: .06em; text-transform: uppercase; touch-action: manipulation;
   box-shadow: 0 0 0 0 transparent; transition: transform .08s ease, box-shadow .2s ease; }
+.next.start { background: var(--c1); color: var(--c1-ink); }
+.next.start:hover { box-shadow: 0 0 28px -6px var(--c1); }
+.next.again { background: transparent; color: var(--fg); box-shadow: inset 0 0 0 1px var(--muted); }
+.next.again:hover { box-shadow: inset 0 0 0 1px var(--fg); }
 .next:active { transform: scale(.985); }
+/* game timer: under the hint, ~1.5× smaller than the command */
+.move .timer { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.07rem, 7.3cqi, 2.07rem); line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--c1); }
+.move .timer.run { color: var(--c2); }
+.move .timer.up { color: var(--danger); }
+.move .timer.stopped { color: var(--muted); }
 .next:hover { box-shadow: 0 0 28px -6px var(--c2); }
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
 .btn { flex: 1 1 0; min-width: 0; border: 1px solid var(--line); background: transparent; border-radius: 12px; padding: 11px 10px; cursor: pointer; font-weight: 500; white-space: nowrap; }
@@ -157,7 +166,7 @@ details.card[open] > summary { margin-bottom: 12px; }
 .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
 .sw { width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--line); cursor: pointer; padding: 0; }
 .sw:disabled { opacity: .3; cursor: default; }
-#sw3Row.off { opacity: .45; }
+#sw3Row.off, #timerRow.off { opacity: .45; }
 .sw[aria-pressed="true"] { border-color: var(--fg); box-shadow: 0 0 0 3px var(--bg) inset; }
 .rangeval { display: flex; align-items: center; gap: 10px; }
 .rangeval input { flex: 1; accent-color: var(--c2); }
@@ -206,6 +215,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       <div class="eyebrow"><span id="moveLabel" class="em">Старт</span><span id="stepNo"></span></div>
       <div class="limb idle" id="limb">На старт</div>
       <div class="hint" id="hint">Зацепки цвета 1: руки сверху, ноги снизу.</div>
+      <div class="timer" id="timer" hidden></div>
       <div class="grade" id="grade" title="Оценка по последним 8 ходам: грейды реальных трасс на этих зацепках, длина ходов, растяжки и угол стены. Ориентир, не измерение.">&nbsp;</div>
     </div>
 
@@ -256,6 +266,10 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
         <div class="fine" role="group" aria-label="Уровень от 1 до 10" id="fineSeg"></div>
         <p class="note" id="fineNote"></p>
       </div>
+      <div class="field checks"><label class="check"><input id="timerOn" type="checkbox"> <span>Добавить таймер</span></label></div>
+      <div class="field" id="timerRow"><span>Время игры</span>
+        <div class="rangeval"><input id="timerSec" type="range" min="10" max="300" step="10" value="60"><output id="timerOut">1:00</output></div>
+        <p class="note">Отсчёт начинается с «Начать»; в ноль игра заканчивается, как после «Сорвался». Зацепки таймер не переключает.</p></div>
       <div class="field"><span>Озвучка</span>
         <div class="seg" role="group" aria-label="Озвучка" id="voiceSeg">
           <button type="button" data-voice="off" aria-pressed="true">Выкл</button>
@@ -750,7 +764,7 @@ if (typeof module !== "undefined") module.exports = Grade;
   ];
 
   // ---------- settings ----------
-  const defaults = { c1: "00FF00", c2: "FF00FF", allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, voice: "off", angle: 30, fine: false, fineLevel: 5, players: null, player: "guest", recView: "all", score: false, c3: "FFFFFF" };
+  const defaults = { c1: "00FF00", c2: "FF00FF", allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, voice: "off", angle: 30, fine: false, fineLevel: 5, players: null, player: "guest", recView: "all", score: false, c3: "FFFFFF", timer: false, timerSec: 60 };
   const LEVEL_TEXT = {
     easy: "Короткие шаги, удобные зацепки под руки, только крупные зацепки, тело не растягивается сильно.",
     medium: "Шаги средней длины; ноги иногда на мелких зацепках для ног.",
@@ -799,6 +813,8 @@ if (typeof module !== "undefined") module.exports = Grade;
     const [R, G, B] = [0, 2, 4].map((i) => parseInt(settings.c2.slice(i, i + 2), 16) / 255);
     const lum = 0.2126 * R + 0.7152 * G + 0.0722 * B;
     r.setProperty("--c2-ink", lum > 0.35 ? "#12100e" : "#ffffff");
+    const [R1, G1, B1] = [0, 2, 4].map((i) => parseInt(settings.c1.slice(i, i + 2), 16) / 255);
+    r.setProperty("--c1-ink", 0.2126 * R1 + 0.7152 * G1 + 0.0722 * B1 > 0.35 ? "#12100e" : "#ffffff");
   }
 
   function buildSwatches(el, key, otherKey) {
@@ -1239,7 +1255,10 @@ if (typeof module !== "undefined") module.exports = Grade;
     const box = $("move"); box.classList.toggle("stuck", !!state.stuck);
     $("undo").disabled = !state.canUndo || !!fallen;
     $("fell").disabled = !!fallen || calibrating || !state.pending;
-    $("next").textContent = fallen ? "Заново" : "Дальше";
+    const starting = !fallen && !state.pending && !calibrating && !timer.running;
+    $("next").textContent = fallen ? "Заново" : starting ? "Начать" : "Дальше";
+    $("next").classList.toggle("start", starting); $("next").classList.toggle("again", !!fallen);
+    renderTimer();
     const best = sharedBest(levelKey()).n;
     const lv = (key) => `<b class="em">${key[0] === "d" ? "Ур. " + key.slice(1) : LEVEL_TITLE[key]}</b>`;   // level on the card
     $("stepNo").innerHTML = (state.step ? `ход ${state.step} · ` : "") + (best ? `рекорд ${best} · ` : "") + lv(levelKey());
@@ -1261,7 +1280,7 @@ if (typeof module !== "undefined") module.exports = Grade;
     }
     if (!state.pending) {
       $("limb").className = "limb idle"; $("limb").textContent = "На старт";
-      $("hint").textContent = "Зацепки цвета 1: руки сверху, ноги снизу. Затем «Дальше».";
+      $("hint").textContent = "Зацепки цвета 1: руки сверху, ноги снизу. Затем «Начать».";
       return;
     }
     const { limb, hold } = state.pending, from = state.pos[limb];
@@ -1275,10 +1294,37 @@ if (typeof module !== "undefined") module.exports = Grade;
       : "на зацепку цвета 2");
   }
 
+  // ---------- game timer: counts down from «Начать»; at zero the game ends as after «Сорвался» ----------
+  const timer = { running: false, endAt: 0, left: 0, tick: null };
+  const fmt = (ms) => { const t = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0"); };
+  function timerReset() { clearInterval(timer.tick); timer.running = false; timer.left = settings.timerSec * 1000; }
+  function timerStart() {
+    timer.running = true; timer.endAt = Date.now() + settings.timerSec * 1000;
+    clearInterval(timer.tick); timer.tick = setInterval(timerCheck, 200);
+  }
+  function timerCheck() {
+    if (!timer.running) return;
+    timer.left = timer.endAt - Date.now();
+    if (timer.left <= 0) {
+      timer.left = 0;
+      if (calibrating) { calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; push(); }
+      fell(true);
+    } else renderTimer();
+  }
+  function renderTimer() {
+    const el = $("timer");
+    el.hidden = !settings.timer;
+    if (!settings.timer) return;
+    el.textContent = fmt(timer.running ? timer.endAt - Date.now() : timer.left);
+    el.className = "timer" + (timer.running ? " run" : fallen ? (fallen.byTime ? " up" : " stopped") : "");
+  }
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) timerCheck(); });
+
   function next(silent) {
     if (calibrating) { calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; push(); return; }
     if (fallen) { restart(); return; }
     const prevPhase = state.phase;
+    if (settings.timer && !timer.running && !state.pending) timerStart();   // «Начать»
     state = game.next(); routePush(); push(); wake();
     if (silent) return;
     const parts = [];
@@ -1288,8 +1334,10 @@ if (typeof module !== "undefined") module.exports = Grade;
     parts.push(movePhrase(state));
     voice.say(parts.join(" "));
   }
-  function fell() {
+  function fell(byTime) {
     if (fallen || calibrating || !state.pending) return;
+    byTime = byTime === true;
+    if (timer.running) { timer.left = byTime ? 0 : timer.endAt - Date.now(); timer.running = false; clearInterval(timer.tick); }
     const key = levelKey(), completed = state.completed, best = bestFor(key), record = completed > best;
     const shared = sharedBest(key);   // best of all players, before this game
     const grades = routeGrades.filter((v) => v != null), grade = grades.length ? +Math.max(...grades).toFixed(1) : null;
@@ -1301,14 +1349,14 @@ if (typeof module !== "undefined") module.exports = Grade;
     }
     cur().games = [{ date, key, n: completed, grade, record }, ...cur().games].slice(0, 5);
     save();
-    fallen = { completed, record, key, shared };
+    fallen = { completed, record, key, shared, byTime };
     log(`Сорвался: ${movesWord(completed)} на уровне «${levelName(key)}»` + (completed > shared.n ? ", новый рекорд" : record ? ", личный рекорд" : ""));
     renderMove(); renderRecords();
-    voice.say(`Игра окончена. ${movesWord(completed)}.` + (completed > shared.n ? (shared.n > 0 ? " Новый рекорд!" : "") : ` Рекорд — ${movesWord(shared.n)}.`));
+    voice.say(`${byTime ? "Время вышло" : "Игра окончена"}. ${movesWord(completed)}.` + (completed > shared.n ? (shared.n > 0 ? " Новый рекорд!" : "") : ` Рекорд — ${movesWord(shared.n)}.`));
   }
   function undo() { if (fallen) return; calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; state = game.undo(); route.pop(); routeGrades.pop(); push(); }
   function restart(silent) {
-    fallen = null; recordSaid = false; route = []; routeGrades = []; game.setOptions(gameOptions()); state = game.start(); push();
+    fallen = null; recordSaid = false; timerReset(); route = []; routeGrades = []; game.setOptions(gameOptions()); state = game.start(); push();
     if (!silent) voice.say(movePhrase(state));
   }
 
@@ -1395,7 +1443,7 @@ if (typeof module !== "undefined") module.exports = Grade;
   }
   function switchedPlayer() {
     save(); recPick = null; recConfirm = false;
-    restart(true); next(true); renderRecords(); renderPlayers();
+    restart(true); renderRecords(); renderPlayers();
   }
   function renderPlayers() {
     const p = cur(), body = $("plBody");
@@ -1453,7 +1501,7 @@ if (typeof module !== "undefined") module.exports = Grade;
   $("next").onclick = () => next();
   $("undo").onclick = undo;
   $("newGame").onclick = () => restart();
-  $("fell").onclick = fell;
+  $("fell").onclick = () => fell();
   $("connect").onclick = bleConnect;
   $("calib").onclick = () => {
     calibrating = !calibrating;
@@ -1541,7 +1589,7 @@ if (typeof module !== "undefined") module.exports = Grade;
   $("boltOnly").onchange = (e) => {
     settings.boltOnly = e.target.checked; save();
     game = Twister.create(playable(), gameOptions());
-    restart(true); next();
+    restart(true);
   };
   $("bleApi").value = String(settings.bleApi);
   $("bleApi").onchange = (e) => {
@@ -1557,13 +1605,31 @@ if (typeof module !== "undefined") module.exports = Grade;
     else if (e.key === "Backspace" || e.key === "ArrowLeft") { e.preventDefault(); undo(); }
   });
 
+  settings.timer = !!settings.timer;
+  if (!(settings.timerSec >= 10 && settings.timerSec <= 300)) settings.timerSec = 60;
+  settings.timerSec = Math.round(settings.timerSec / 10) * 10;
+  const showTimerSet = () => {
+    $("timerOn").checked = settings.timer; $("timerSec").value = settings.timerSec; $("timerSec").disabled = !settings.timer;
+    $("timerOut").textContent = fmt(settings.timerSec * 1000); $("timerRow").classList.toggle("off", !settings.timer);
+  };
+  $("timerOn").onchange = (e) => {
+    settings.timer = e.target.checked; save();
+    if (!settings.timer && timer.running) { clearInterval(timer.tick); timer.running = false; }
+    if (!timer.running && !fallen) timer.left = settings.timerSec * 1000;
+    showTimerSet(); renderMove();
+  };
+  $("timerSec").oninput = (e) => {
+    settings.timerSec = +e.target.value; save(); showTimerSet();
+    if (!timer.running && !fallen) { timer.left = settings.timerSec * 1000; renderTimer(); }   // a running game keeps its time
+  };
+  timerReset(); showTimerSet();
   settings.score = !!settings.score; fixScoreColor();
   $("score").checked = settings.score;
   $("score").onchange = (e) => { settings.score = e.target.checked; save(); buildScoreSwatches(); push(); };
   applyColors();
   buildAllSwatches();
   // Open in a working state: start position plus the first move, so the preview shows 5 lit holds.
-  push(); next(true);   // opens on the first move, silently: speech needs a tap first
+  push();   // opens on the start position: «Начать» lights the first move (and starts the timer)
 })();
 </script>
 
