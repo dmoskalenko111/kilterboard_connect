@@ -1,0 +1,25 @@
+<!-- Offline support (GitHub Pages build only): registers sw.js and tells when a new version is waiting. -->
+<div id="updBar" hidden style="position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:10;background:#191f27;border:1px solid #2b3440;border-radius:12px;padding:10px 12px;display:flex;gap:10px;align-items:center;font-size:.88rem;color:#e9edf2;box-shadow:0 6px 24px #0008">
+  <span style="flex:1;min-width:0">Загружена новая версия — включится при следующем запуске.</span>
+  <button id="updNow" type="button" style="border:1px solid #e9edf2;background:transparent;border-radius:10px;padding:6px 10px;cursor:pointer;white-space:nowrap">Обновить сейчас</button>
+  <button id="updClose" type="button" aria-label="Закрыть" style="border:0;background:transparent;color:#8d98a7;font-size:1.2rem;cursor:pointer;padding:0 4px">×</button>
+</div>
+<script>
+(() => {
+  if (!("serviceWorker" in navigator) || !/^https?:$/.test(location.protocol)) return;
+  const bar = document.getElementById("updBar");
+  const show = () => { bar.hidden = false; };
+  document.getElementById("updClose").onclick = () => { bar.hidden = true; };
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (!reloading) { reloading = true; location.reload(); } });
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").then((reg) => {
+      const watch = (w) => w && w.addEventListener("statechange", () => { if (w.state === "installed" && navigator.serviceWorker.controller) show(); });
+      if (reg.waiting && navigator.serviceWorker.controller) show();
+      watch(reg.installing);
+      reg.addEventListener("updatefound", () => watch(reg.installing));
+      document.getElementById("updNow").onclick = () => { if (reg.waiting) reg.waiting.postMessage("update-now"); };
+    }).catch(() => {});
+  });
+})();
+</script>

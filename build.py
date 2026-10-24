@@ -3,7 +3,7 @@
 index.html          - standalone page (full HTML document), served by GitHub Pages
 dist/artifact.html  - same content without the document skeleton (for publishing as a Claude artifact)
 """
-import json, pathlib
+import hashlib, json, pathlib
 
 root = pathlib.Path(__file__).parent
 src = root / "src"
@@ -26,11 +26,18 @@ standalone = (
     "<!doctype html>\n<html lang=\"ru\">\n<head>\n<meta charset=\"utf-8\">\n"
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n"
     "<meta name=\"theme-color\" content=\"#11151b\">\n"
+    "<link rel=\"manifest\" href=\"manifest.webmanifest\">\n"
+    "<link rel=\"icon\" href=\"icon-192.png\">\n"
     + page[:head_end]
     + "\n<style>body{margin:0}[hidden]{display:none!important}"
       ":root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}</style>\n"
-    + "</head>\n<body>\n" + page[head_end:] + "\n</body>\n</html>\n"
+    + "</head>\n<body>\n" + page[head_end:] + "\n" + (root / "src" / "offline.html").read_text(encoding="utf-8")
+    + "\n</body>\n</html>\n"
 )
 (root / "index.html").write_text(standalone, encoding="utf-8")
+# Offline copy: the service worker caches these files; its version changes with the page, so phones pick up
+# a new build on the next launch.
+version = hashlib.sha256(standalone.encode("utf-8")).hexdigest()[:12]
+(root / "sw.js").write_text((src / "sw.js").read_text(encoding="utf-8").replace("/*VERSION*/", version), encoding="utf-8")
 (root / "emulator" / "holds.json").write_text((root / "holds.json").read_text())
 print("built", len(standalone), "bytes")
