@@ -257,7 +257,9 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       <div class="field checks"><label class="check"><input id="timerOn" type="checkbox"> <span>Добавить таймер</span></label></div>
       <div class="field" id="timerRow"><span>Время игры</span>
         <div class="rangeval"><input id="timerSec" type="range" min="10" max="300" step="10" value="60"><output id="timerOut">1:00</output></div>
-        <p class="note">Отсчёт начинается с «Начать»; в ноль игра заканчивается, как после «Сорвался». Зацепки таймер не переключает.</p></div>
+        <label class="check" style="margin-top:6px"><input id="timerShow" type="checkbox"> <span>Отображать таймер</span></label>
+        <p class="note">Отсчёт начинается с «Начать»; в ноль игра заканчивается, как после «Сорвался». Зацепки таймер не переключает.
+          «Отображать таймер» показывает оставшееся время цифрами в правом верхнем углу стены (цветом счёта).</p></div>
       <div class="field"><span>Озвучка</span>
         <div class="seg" role="group" aria-label="Озвучка" id="voiceSeg">
           <button type="button" data-voice="off" aria-pressed="true">Выкл</button>
@@ -268,7 +270,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       <div class="field"><span>Цвет 1 — зацепки, на которых стоите</span><div class="swatches" id="sw1"></div></div>
       <div class="field"><span>Цвет 2 — новая зацепка</span><div class="swatches" id="sw2"></div></div>
       <div class="field checks"><label class="check"><input id="score" type="checkbox"> <span>Отображать счёт</span></label></div>
-      <div class="field" id="sw3Row"><span>Цвет счёта — две цифры в левом верхнем углу стены</span><div class="swatches" id="sw3"></div></div>
+      <div class="field" id="sw3Row"><span>Цвет счёта и таймера на стене</span><div class="swatches" id="sw3"></div></div>
       <div class="field"><span>Проверка карты зацепок</span>
         <button class="btn" id="calib" type="button">Зажечь контрольный узор</button>
         <p class="note" id="calibNote">Сверьте стену с превью. Углы: <b style="color:#ff4040">красный</b> — левый верхний,
@@ -322,7 +324,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   ];
 
   // ---------- settings ----------
-  const defaults = { c1: "00FF00", c2: "FF00FF", allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, voice: "off", angle: 30, fine: false, fineLevel: 5, players: null, player: "guest", recView: "all", score: false, c3: "FFFFFF", timer: false, timerSec: 60 };
+  const defaults = { c1: "00FF00", c2: "FF00FF", allowCross: false, mockApi: 3, bleApi: "auto", boltOnly: false, level: "medium", connOpen: true, climb: false, allowMatch: false, allowSmallMatch: false, voice: "off", angle: 30, fine: false, fineLevel: 5, players: null, player: "guest", recView: "all", score: false, c3: "FFFFFF", timer: false, timerSec: 60, timerShow: false };
   const LEVEL_TEXT = {
     easy: "Короткие шаги, удобные зацепки под руки, только крупные зацепки, тело не растягивается сильно.",
     medium: "Шаги средней длины; ноги иногда на мелких зацепках для ног.",
@@ -396,6 +398,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     if (settings.c3 === settings.c1 || settings.c3 === settings.c2 || !PALETTE.some(([h]) => h === settings.c3))
       settings.c3 = PALETTE.map(([h]) => h).find((h) => h !== settings.c1 && h !== settings.c2);
   }
+  const wallDigits = () => settings.score || (settings.timer && settings.timerShow);   // anything drawn in the score colour
   function buildScoreSwatches() {
     const el = $("sw3"); el.innerHTML = "";
     for (const [hex, name] of PALETTE) {
@@ -403,11 +406,11 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       b.type = "button"; b.className = "sw"; b.style.background = "#" + hex;
       b.title = name; b.setAttribute("aria-label", name);
       b.setAttribute("aria-pressed", String(settings.c3 === hex));
-      b.disabled = !settings.score || hex === settings.c1 || hex === settings.c2;
+      b.disabled = !wallDigits() || hex === settings.c1 || hex === settings.c2;
       b.onclick = () => { settings.c3 = hex; save(); buildScoreSwatches(); push(); };
       el.appendChild(b);
     }
-    $("sw3Row").classList.toggle("off", !settings.score);
+    $("sw3Row").classList.toggle("off", !wallDigits());
   }
   function buildAllSwatches() { buildSwatches($("sw1"), "c1", "c2"); buildSwatches($("sw2"), "c2", "c1"); buildScoreSwatches(); }
 
@@ -697,7 +700,21 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     return out;
   }
 
-  function push() {
+  // Timer on the wall: minutes, tens and units of seconds in the top-right corner (x 56–136), leading zeros dark.
+  function timerPlacements() {
+    const t = Math.max(0, Math.ceil((timer.running ? timer.endAt - Date.now() : timer.left) / 1000));
+    const m = Math.floor(t / 60), sec = t % 60, byTime = fallen && fallen.byTime;
+    const slots = byTime ? [null, 0, 0] : [m || null, m || sec >= 10 ? Math.floor(sec / 10) : null, sec % 10];
+    const out = [];
+    slots.forEach((d, i) => d != null && DIGITS[d].forEach((row, r) => [...row].forEach((c, k) => {
+      const h = c === "#" && boltAt.get(56 + 32 * i + 8 * k + "," + (152 - 8 * r));
+      if (h) out.push({ position: h.led, color: settings.c3 });
+    })));
+    return out;
+  }
+  let shownSecond = null;   // last second sent to the wall, so the tick sends only on a change
+
+  function push(quiet) {
     if (calibrating) {
       const pat = calibrationPattern();
       currentLabels = new Map(pat.map((p) => [p.hold.led, { label: p.label, isNew: false }]));
@@ -721,9 +738,12 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     currentArrow = state.pending ? { from: state.pos[state.pending.limb], to: state.pending.hold } : null;
     const game = state.lit.map((l) => ({ position: l.hold.led, color: l.role === "new" ? settings.c2 : settings.c1 }));
     const taken = new Set(game.map((g) => g.position));
-    const placements = [...(settings.score ? scorePlacements(state.completed).filter((p) => !taken.has(p.position)) : []), ...game];
+    const under = [...(settings.score ? scorePlacements(state.completed) : []),
+      ...(settings.timer && settings.timerShow ? timerPlacements() : [])].filter((p) => !taken.has(p.position) && taken.add(p.position));   // under the game, no LED twice
+    const placements = [...under, ...game];
+    shownSecond = timerSecond();
     const bytes = Aurora.encode(placements, api());
-    log(`→ ${placements.length} зацепок, ${bytes.length} байт, ${Math.ceil(bytes.length / 20)} BLE-кусок: <span>${hex(bytes)}</span>`);
+    if (!quiet) log(`→ ${placements.length} зацепок, ${bytes.length} байт, ${Math.ceil(bytes.length / 20)} BLE-кусок: <span>${hex(bytes)}</span>`);
     decoder.reset();
     for (const c of Aurora.chunks(bytes)) decoder.feed(c);   // preview is built from the bytes themselves
     if (mode === "ble" && ble.char) bleSend(bytes);
@@ -860,6 +880,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     timer.running = true; timer.endAt = Date.now() + settings.timerSec * 1000;
     clearInterval(timer.tick); timer.tick = setInterval(timerCheck, 200);
   }
+  const timerSecond = () => Math.ceil((timer.running ? timer.endAt - Date.now() : timer.left) / 1000);
   function timerCheck() {
     if (!timer.running) return;
     timer.left = timer.endAt - Date.now();
@@ -868,7 +889,11 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
       if (calibrating) { calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; push(); }
       try { if (navigator.vibrate) navigator.vibrate([400, 150, 400]); } catch (e) {}   // time is up: buzz (not on «Сорвался»)
       fell(true);
-    } else renderTimer();
+    } else {
+      renderTimer();
+      // a packet each second while the time is shown on the wall (not over the map check pattern, not logged)
+      if (settings.timer && settings.timerShow && !calibrating && timerSecond() !== shownSecond) push(true);
+    }
   }
   function renderTimer() {
     const el = $("timer");
@@ -909,6 +934,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     cur().games = [{ date, key, n: completed, grade, record }, ...cur().games].slice(0, 5);
     save();
     fallen = { completed, record, key, shared, byTime };
+    if (settings.timer && settings.timerShow) push(true);   // the wall shows the final time («00» or what was left)
     log(`Сорвался: ${movesWord(completed)} на уровне «${levelName(key)}»` + (completed > shared.n ? ", новый рекорд" : record ? ", личный рекорд" : ""));
     renderMove(); renderRecords();
     voice.say(`${byTime ? "Время вышло" : "Игра окончена"}. ${movesWord(completed)}.` + (completed > shared.n ? (shared.n > 0 ? " Новый рекорд!" : "") : ` Рекорд — ${movesWord(shared.n)}.`));
@@ -1171,16 +1197,19 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
   const showTimerSet = () => {
     $("timerOn").checked = settings.timer; $("timerSec").value = settings.timerSec; $("timerSec").disabled = !settings.timer;
     $("timerOut").textContent = fmt(settings.timerSec * 1000); $("timerRow").classList.toggle("off", !settings.timer);
+    $("timerShow").checked = settings.timerShow; $("timerShow").disabled = !settings.timer;
   };
+  settings.timerShow = !!settings.timerShow;
+  $("timerShow").onchange = (e) => { settings.timerShow = e.target.checked; save(); buildScoreSwatches(); push(); };
   $("timerOn").onchange = (e) => {
     settings.timer = e.target.checked; save();
     if (!settings.timer && timer.running) { clearInterval(timer.tick); timer.running = false; }
     if (!timer.running && !fallen) timer.left = settings.timerSec * 1000;
-    showTimerSet(); renderMove();
+    showTimerSet(); buildScoreSwatches(); push();
   };
   $("timerSec").oninput = (e) => {
     settings.timerSec = +e.target.value; save(); showTimerSet();
-    if (!timer.running && !fallen) { timer.left = settings.timerSec * 1000; renderTimer(); }   // a running game keeps its time
+    if (!timer.running && !fallen) { timer.left = settings.timerSec * 1000; renderTimer(); if (settings.timerShow) push(true); }   // a running game keeps its time
   };
   timerReset(); showTimerSet();
   settings.score = !!settings.score; fixScoreColor();

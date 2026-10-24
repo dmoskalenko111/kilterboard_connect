@@ -2,7 +2,7 @@
 // with or without internet. A new version is downloaded in the background when online and takes over
 // on the next launch (after the app has been fully closed), or at once via «Обновить сейчас».
 // Nothing is sent anywhere: the worker only stores this site's own files and the fonts the page uses.
-const VERSION = "ebf7e6571c0b";
+const VERSION = "3b7ff92653ce";
 const CACHE = "kilter-twister-" + VERSION;
 const FONTS = "kilter-twister-fonts";
 const FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./icon-maskable-512.png"];
