@@ -866,6 +866,7 @@ select { background: var(--bg); border: 1px solid var(--line); border-radius: 8p
     if (timer.left <= 0) {
       timer.left = 0;
       if (calibrating) { calibrating = false; $("calib").textContent = "Зажечь контрольный узор"; push(); }
+      try { if (navigator.vibrate) navigator.vibrate([400, 150, 400]); } catch (e) {}   // time is up: buzz (not on «Сорвался»)
       fell(true);
     } else renderTimer();
   }
